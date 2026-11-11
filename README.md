@@ -10,6 +10,7 @@
 
 - [docs/bridge-plan.md](docs/bridge-plan.md)：桥接方案（传输、部署、按会话分流）。
 - [docs/plugin-management.md](docs/plugin-management.md)：插件管理方式，含界面镜像实验结果。
+- [docs/panel.md](docs/panel.md)：插件管理面板设计（草案）。
 
 ## 实验
 

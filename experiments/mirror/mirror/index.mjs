@@ -84,6 +84,26 @@ export async function apply(ctx, config = {}) {
   const INNER = 'x-dsh-wsl-mirror-inner'
   let remoteNamespaces = new Set()
   const readBody = async (req) => { const parts = []; for await (const c of req) parts.push(c); return Buffer.concat(parts) }
+  // Where the official Plugins page manages plugins: 'local' (this Host, the default) or 'wsl'. Set with
+  // POST /wsl-bridge/plugin-target {"target": "wsl" | "local"}; read with GET.
+  let pluginTarget = readRemote(config ?? {}).pluginTarget === 'wsl' ? 'wsl' : 'local'
+  const PLUGIN_NAMESPACES = new Set(['pluginManager', 'pluginInventory', 'pluginMarket', 'pluginRecommendations', 'pluginRegistryProbe'])
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/plugin-target',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      if (req.method === 'POST') {
+        try { const t = JSON.parse((await readBody(req)).toString('utf8')).target; if (t === 'wsl' || t === 'local') pluginTarget = t } catch {}
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ target: pluginTarget }))
+    },
+  }), 'wsl-mirror: plugin target route')
+  const forwardApi = async (path, body) => fetch(`${remote}${path}`, {
+    method: 'POST', body,
+    headers: { cookie: await cookie(), origin: remote, 'content-type': 'application/json' },
+  })
   const callRemoteApi = async (method, body) => fetch(`${remote}/api/settings/${method}`, {
     method: 'POST', body,
     headers: { cookie: await cookie(), origin: remote, 'content-type': 'application/json' },
@@ -93,9 +113,13 @@ export async function apply(ctx, config = {}) {
     res.end(Buffer.from(await upstream.arrayBuffer()))
   }
   ctx.on('connection/request', async (req, res, next) => {
-    const method = settingsMethod(new URL(req.url ?? '/', 'http://x').pathname)
+    const pathname = new URL(req.url ?? '/', 'http://x').pathname
+    const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
-    if (method === undefined || !sameVersion || req.headers[INNER] !== undefined) return next()
+    if (!sameVersion || req.headers[INNER] !== undefined) return next()
+    const namespace = /^\/api\/([A-Za-z]+)\//.exec(pathname)?.[1]
+    if (pluginTarget === 'wsl' && PLUGIN_NAMESPACES.has(namespace)) return answer(res, await forwardApi(pathname, await readBody(req)))
+    if (method === undefined) return next()
     const body = await readBody(req)
     if (method === 'describe') {
       const headers = { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' }

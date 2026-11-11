@@ -57,6 +57,8 @@
 细节：
 
 - 在 Windows 文件夹里新建 WSL 任务时，如果 WSL 端还没有对应的文件夹，会先在 WSL 端创建（`workspace/create /mnt/d/...`），再在其中创建任务。
+- 删除 Windows 文件夹时，WSL 端对应的文件夹一起删除，并清掉它的运行位置记录；否则它的 WSL 任务会在侧栏单独冒出一行。和官方的删除一样，只是取消登记，不删文件，也不删任务记录。
+- "在应用中打开"（会话标题栏的"Open In..."按钮、文件的"用其他应用打开""显示文件位置"）总是在 Desktop 这台电脑上执行。WSL 任务给出的路径是 WSL 的（`/home/...`、`/mnt/d/...`），服务端先换成 `\\wsl.localhost\<发行版>\...` 或 `D:\...` 再交给 Desktop。
 - 页面复用空白任务时，可能把另一边的空白任务交给 `session/create`；服务端按运行位置决定，不是这一边的就不复用。
 - 侧栏的第一帧最多等 WSL 端 1.5 秒，避免侧栏先只显示 Windows 的内容、随后再补上 WSL 的。会话控制流只能有一个初始快照，最多等 WSL 端 3 秒；WSL 端重连后会结束这条流，由页面重新订阅。
 
@@ -80,6 +82,7 @@
 - 用户在 Desktop 中添加了 WSL 文件夹 `dsh-test`，发了"这是一个测试，汇报一下运行的位置"。
   - agent 在 WSL 中执行了 `pwd; hostname; whoami; uname -srm`，工作目录为 `/home/s/dsh-test`。
   - 模型调用用的是经凭据代理取到的 Desktop 账号，WSL 端日志有 `[llm-deepseek-account] model listing … loaded 2 model(s)`。
+- 用户在 WSL 任务里让 agent 先提问、再请求审批（2026-11-11 23:07）：提问弹窗出现在 Desktop，回答传回 WSL；`plugin_manager` 的审批弹窗出现，点"允许一次"后 WSL 端记录 `approval/decided allowed-once` 并继续执行，回合正常结束。`$events` 的 `waterfall` 由此在真实 Desktop 上验证。
 - 用户的反馈与调整：
   - 系统选择框里看不到 Linux → 加了"添加文件夹时先选 Windows 或 WSL"和 WSL 目录浏览框；
   - 右上角橙色框太显眼 → 改为输入框下方的灰色环境选择器；
@@ -88,7 +91,5 @@
 
 ## 还没做
 
-- 审批、提问等 Host 发给页面的请求（`$events` 的 `waterfall`）只做了 ID 改写，还没有实际触发过。
-- "在应用中打开"（`session/openWorkspacePath`）对 WSL 任务会在 WSL 端执行，应改为在 Desktop 端用 `\\wsl.localhost\...` 路径打开。
-- 删除 Windows 文件夹时，它在 WSL 端对应的文件夹没有一起删除。
+- "在应用中打开"的路径换算只在 WSL 内做了单元级确认（`/home/s/x` → `\\wsl.localhost\Ubuntu\home\s\x`），等在 Desktop 上点一次确认。
 - WSL 里的 Creator 实际查页面端接口：分流已验证（带 `wsl:` 前缀的回答由 WSL 端接收），完整流程等在 Desktop 上用 Creator 时确认。

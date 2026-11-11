@@ -122,6 +122,25 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       res.end(JSON.stringify(mine))
       return
     }
+    if (endpoint === 'workspace/delete' && !isWsl(args.request?.workspaceId) && twins.has(args.request?.workspaceId)) {
+      // Removing a Windows folder also removes the WSL Host's twin; otherwise its tasks would reappear as a row of
+      // their own. Like the official delete, this only unregisters the folders: no file or task record is deleted.
+      const workspaceId = args.request.workspaceId
+      const mine = await ownHost(req, pathname, body)
+      if (mine?.result?.ok) {
+        const theirs = await rpc(endpoint, translate({ request: { workspaceId: twins.get(workspaceId) } }, false)).catch((error) => ({ ok: false, error }))
+        if (!theirs.ok) ctx.logger?.warn?.('wsl-mirror: removing the WSL twin of %s failed: %s', workspaceId, theirs.error?.message)
+        twins.delete(workspaceId)
+        if (runTargets.delete(workspaceId)) saveRunTargets()
+      }
+      return reply(res, message.rpcId, mine?.result ?? failure('internal', 'workspace/delete failed'))
+    }
+    if ((endpoint === 'session/openWorkspacePath' || endpoint === 'session/workspacePathApplications') && typeof args.request?.path === 'string' && args.request.path.startsWith('/')) {
+      // A WSL task's file paths are the WSL Host's (/home/..., /mnt/d/...). Opening happens on this desktop, so the
+      // path is turned into this Host's form (\\wsl.localhost\<distro>\..., D:\...) and the call stays here.
+      const path = paths().toLocal(args.request.path)
+      if (path !== args.request.path) return local({ ...args, request: { ...args.request, path } })
+    }
     if (endpoint.startsWith('dynamicCordisRunner/')) {
       const method = endpoint.slice('dynamicCordisRunner/'.length)
       if (method === 'syncInspectManifest') {

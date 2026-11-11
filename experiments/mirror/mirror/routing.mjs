@@ -17,7 +17,7 @@ import { applyWorkspaceFrame, localizeSessions, mergeWorkspaces, pathMapping, pl
 import { remoteError, upgradeHeaders, WslMux } from './remote-mux.mjs'
 
 /** Namespaces that belong to this Host whatever they name (handled elsewhere or never per-session). */
-const LOCAL_ONLY = /^(?:settings|credentials|plugins|pluginManager|pluginInventory|pluginMarket|pluginRegistryProbe|pluginRecommendations|cordis|dynamicCordisRunner|account|remoteAccess|productAnalytics|llm|directoryPicker)\//
+const LOCAL_ONLY = /^(?:settings|credentials|plugins|pluginManager|pluginInventory|pluginMarket|pluginRegistryProbe|pluginRecommendations|cordis|account|remoteAccess|productAnalytics|llm|directoryPicker)\//
 const MERGED_LISTS = new Set(['session/list', 'session/search'])
 const MERGED_STREAMS = new Set(['workspace/follow', 'session/control', '$events'])
 const RUN_TARGETS_FILE = join(homedir(), '.dsh-wsl', 'run-targets.json')
@@ -31,6 +31,9 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
   let wslWorkspaces
   let twins = new Map()
   const eventClients = new Map()   // this Host's $events client id → the WSL Host's
+  // Creator (cordis) in a WSL task asks the page through $events: inspection queries and run approvals carry ids the
+  // page answers with; plugin runs it starts are named by pluginRunId. Remembered so the answers go back to WSL.
+  const wslCordis = { requests: new Set(), runs: new Set(), manifest: undefined }
   let runTargets = new Map()
   try { runTargets = new Map(Object.entries(JSON.parse(readFileSync(RUN_TARGETS_FILE, 'utf8')))) } catch {}
   const saveRunTargets = () => {
@@ -118,6 +121,28 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(mine))
       return
+    }
+    if (endpoint.startsWith('dynamicCordisRunner/')) {
+      const method = endpoint.slice('dynamicCordisRunner/'.length)
+      if (method === 'syncInspectManifest') {
+        // The page's own APIs: both Hosts' Creator may inspect them.
+        wslCordis.manifest = args
+        rpc(endpoint, args).catch(() => {})
+        return local()
+      }
+      if (method === 'inventory') {
+        const [mine, theirs] = await Promise.all([ownHost(req, pathname, body), rpc(endpoint, {}).catch(() => undefined)])
+        if (mine?.result?.ok && theirs?.ok) mine.result.value = [...mine.result.value, ...translate(theirs.value, true)]
+        return reply(res, message.rpcId, mine?.result ?? failure('internal', 'no inventory'))
+      }
+      const toWslHost = method === 'resolveRequestRun' ? wslCordis.requests.has(args.requestId)
+        : method === 'invoke' ? wslCordis.runs.has(args.pluginRunId)
+        : isWsl(args.agentId)
+      if (!toWslHost) return local()
+      if (method === 'getClientCode' && typeof args.pluginRunId === 'string') wslCordis.runs.add(args.pluginRunId)
+      if (method === 'resolveInspectQuery' || method === 'resolveRequestRun') wslCordis.requests.delete(args.requestId)
+      const result = await rpc(endpoint, translate(args, false))
+      return reply(res, message.rpcId, result.ok ? { ok: true, value: translate(result.value, true) } : result)
     }
     if (endpoint === '$events/result') {
       if (!isWsl(args.eventId)) return local()
@@ -222,6 +247,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
       let workspaceId = new URL(req.url, 'http://x').searchParams.get('workspaceId')
+      let presetAvailable
       if (req.method === 'POST') {
         try {
           const body = JSON.parse((await readBody(req)).toString('utf8'))
@@ -229,6 +255,12 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
           if (typeof workspaceId === 'string' && !isWsl(workspaceId) && (body.target === 'wsl' || body.target === 'local')) {
             if (body.target === 'local') runTargets.delete(workspaceId); else runTargets.set(workspaceId, 'wsl')
             saveRunTargets()
+          }
+          // Switching a blank task carries its mode over when the chosen side has it (the page asks with agentPreset).
+          if (typeof body.agentPreset === 'string') {
+            const { mine, theirs } = await presets(req)
+            const side = (isWsl(workspaceId) || runTargets.get(workspaceId) === 'wsl') ? theirs : mine?.ok ? mine.value.presets : []
+            presetAvailable = side.some((p) => p.id === body.agentPreset)
           }
         } catch {}
       }
@@ -241,6 +273,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
         wslAvailable: available(),
         distro: distro() ?? null,
         wslPath: folder ? (isWsl(workspaceId) ? folder.path : paths().toWsl(folder.path)) : null,
+        ...(presetAvailable === undefined ? {} : { presetAvailable }),
       }))
     },
   }), 'wsl-mirror: run target route')
@@ -372,14 +405,27 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
         if (item.down) continue
         const frame = item.value
         if (frame.type === 'ready') {
-          if (item.source === 'local') { localClient = frame.clientId; yield frame; yield* buffered.splice(0) } else wslClient = frame.clientId
+          if (item.source === 'local') { localClient = frame.clientId; yield frame; yield* buffered.splice(0) } else {
+            wslClient = frame.clientId
+            // A WSL Host that (re)connected has not seen the page's APIs yet.
+            if (wslCordis.manifest !== undefined) rpc('dynamicCordisRunner/syncInspectManifest', wslCordis.manifest).catch(() => {})
+          }
           if (localClient !== undefined && wslClient !== undefined) eventClients.set(localClient, wslClient)
           continue
         }
+        if (item.source === 'wsl' && frame.type === 'emit') noteCordis(frame)
         const out = item.source === 'wsl' ? prefixEvent(frame) : frame
         if (localClient === undefined) buffered.push(out); else yield out
       }
     } finally { if (localClient !== undefined) eventClients.delete(localClient) }
+  }
+
+  function noteCordis(frame) {
+    const [request] = frame.args ?? []
+    const id = request?.requestId
+    if (typeof id !== 'string') return
+    if (frame.event === 'cordis/inspect-query' || frame.event === 'cordis/request-run') wslCordis.requests.add(id)
+    else if (frame.event === 'cordis/inspect-query-resolved' || frame.event === 'cordis/request-run-resolved') wslCordis.requests.delete(id)
   }
 
   return { call }

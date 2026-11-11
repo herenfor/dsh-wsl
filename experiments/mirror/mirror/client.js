@@ -147,9 +147,20 @@ window.__ModuleLoader__.load({
         setOpen(false)
         if (target === state.target || state.insideWsl) return
         setBusy(true)
+        // The blank task on the other side keeps this one's mode (Creator, a plugin's preset, ...) and typed text.
+        const preset = sessions.byId[sessionId]?.projectionValues?.agentPreset
+        const input = host.parentElement?.querySelector('textarea, [contenteditable="true"]')
+        const draft = (input?.tagName === 'TEXTAREA' ? input.value : input?.innerText ?? '').replace(/\n$/, '')
+        const fill = draft.trim() === '' ? undefined : (id) => {
+          const binding = ui.sessions.binding?.(id)
+          if (binding && ui.prepareDraft) try { ui.prepareDraft(binding, { prompt: draft, whenDraftExists: 'replace' }) } catch {}
+        }
         try {
-          setState(await api('wsl-bridge/run-target', { workspaceId, target }))
-          await ui.openWorkspace(workspaceId)  // a blank task on the chosen side replaces this one
+          const next = await api('wsl-bridge/run-target', { workspaceId, target, ...(typeof preset === 'string' ? { agentPreset: preset } : {}) })
+          setState(next)
+          // A blank task on the chosen side replaces this one; a mode that side lacks (a plugin's preset installed
+          // only on the other side) falls back to the default mode.
+          await ui.openWorkspace(workspaceId, fill, typeof preset === 'string' && next.presetAvailable ? { agentPreset: preset } : {})
         } finally { setBusy(false) }
       }
       const item = (target, icon, title, note, disabled) => h('button', {

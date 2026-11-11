@@ -32,6 +32,15 @@
   - 在 Windows 运行的任务选这种模式时，返回"「调优」模式来自 WSL 中的插件，只能用于在 WSL 中运行的任务。请在输入框下方把运行位置切换到 WSL。"
   - 原因：`agentPresets/list` 不带会话 ID，服务端分不出是哪个任务要的，所以只能合并两边。
 
+- Creator 模式（"创建你的插件"）：
+  - 跟着任务走（2026-11-11 用户决定）：在 Windows 运行的任务里创建的插件装在 Windows 的 Desktop，在 WSL 运行的装在 WSL。官方入口用当前文件夹新建任务，分流规则照常生效，不需要另外判断。
+  - 在新建任务页切换运行位置时，新的空白任务保留原来的模式和输入框里的文字。如果另一边没有这个模式（只装在一边的插件提供的模式），就用默认模式。
+  - 两边的 Creator 是同一份预设，只有平台相关的部分不同：
+    - Windows 的 Creator 用 PowerShell 工具，WSL 用 bash。
+    - Windows 的 Creator 读技能模板时，模板在 `app.asar` 里，只能用文件读取工具；WSL 里是普通文件。
+    - 插件管理工具装插件时，装到它自己所在的 Host。
+  - WSL 的 Creator 查页面端接口（`cordis_inspect_query` 的 Client 部分）、请求运行带页面部分的插件时，WSL 端通过 `$events` 发请求，页面再调用 `dynamicCordisRunner/*` 回答。这些回答按会话 ID、请求 ID 和插件运行 ID 转回 WSL。页面上报的接口清单两边各发一份，WSL 端重连后会补发。
+
 ## 实现
 
 全部在 Desktop 端 Host 的 Node 进程里完成（mirror 插件），页面代码不变，因此官方页面的所有调用天然走同一套分流。分流思路和 ID 字段表参考 dsh-ssh-workspaces（MIT，已在 `ids.mjs` 注明出处）。不同的是，它在浏览器端接管调用、远端流经 HTTP 轮询中转；我们在服务端分流，远端流直接走桥接上的 WebSocket。
@@ -82,4 +91,4 @@
 - 审批、提问等 Host 发给页面的请求（`$events` 的 `waterfall`）只做了 ID 改写，还没有实际触发过。
 - "在应用中打开"（`session/openWorkspacePath`）对 WSL 任务会在 WSL 端执行，应改为在 Desktop 端用 `\\wsl.localhost\...` 路径打开。
 - 删除 Windows 文件夹时，它在 WSL 端对应的文件夹没有一起删除。
-- Creator 模式（"让 agent 创建插件"）的会话放在哪边。
+- WSL 里的 Creator 实际查页面端接口：分流已验证（带 `wsl:` 前缀的回答由 WSL 端接收），完整流程等在 Desktop 上用 Creator 时确认。

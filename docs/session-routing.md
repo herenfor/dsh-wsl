@@ -83,6 +83,7 @@
   - agent 在 WSL 中执行了 `pwd; hostname; whoami; uname -srm`，工作目录为 `/home/s/dsh-test`。
   - 模型调用用的是经凭据代理取到的 Desktop 账号，WSL 端日志有 `[llm-deepseek-account] model listing … loaded 2 model(s)`。
 - 用户在 WSL 任务里让 agent 先提问、再请求审批（2026-11-11 23:07）：提问弹窗出现在 Desktop，回答传回 WSL；`plugin_manager` 的审批弹窗出现，点"允许一次"后 WSL 端记录 `approval/decided allowed-once` 并继续执行，回合正常结束。`$events` 的 `waterfall` 由此在真实 Desktop 上验证。
+- "在应用中打开"：用户在 Desktop 上对 WSL 任务点过，能正常打开（2026-11-11）。
 - 用户的反馈与调整：
   - 系统选择框里看不到 Linux → 加了"添加文件夹时先选 Windows 或 WSL"和 WSL 目录浏览框；
   - 右上角橙色框太显眼 → 改为输入框下方的灰色环境选择器；
@@ -91,5 +92,4 @@
 
 ## 还没做
 
-- "在应用中打开"的路径换算只在 WSL 内做了单元级确认（`/home/s/x` → `\\wsl.localhost\Ubuntu\home\s\x`），等在 Desktop 上点一次确认。
 - WSL 里的 Creator 实际查页面端接口：分流已验证（带 `wsl:` 前缀的回答由 WSL 端接收），完整流程等在 Desktop 上用 Creator 时确认。

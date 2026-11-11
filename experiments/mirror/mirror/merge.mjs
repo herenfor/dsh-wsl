@@ -1,7 +1,14 @@
 // Pure graph merge for the UI mirror. Kept free of DSH imports so it can be unit-tested.
 import { createHash } from 'node:crypto'
 
-export const sameRelease = (a, b) => a?.version === b?.version && a?.commit === b?.commit
+/**
+ * The two Hosts can work together: DSH of the same major.minor (docs/deployment.md). Patch and prerelease may differ;
+ * the setup dialog offers to align them.
+ */
+export const compatibleReleases = (a, b) => {
+  const pa = /^(\d+)\.(\d+)\./.exec(a?.version ?? ''); const pb = /^(\d+)\.(\d+)\./.exec(b?.version ?? '')
+  return !!pa && !!pb && pa[1] === pb[1] && pa[2] === pb[2]
+}
 
 /**
  * Merge the user rows of a remote graph into the local one. A remote user row replaces a local row of the same id
@@ -15,7 +22,7 @@ export const sameRelease = (a, b) => a?.version === b?.version && a?.commit === 
 export function mergeGraphs(local, remote, order) {
   const mirrored = new Map()
   if (remote === undefined) return { graph: local, mirrored, reason: 'no remote graph yet' }
-  if (!sameRelease(local.release, remote.graph.release)) {
+  if (!compatibleReleases(local.release, remote.graph.release)) {
     return { graph: local, mirrored, reason: `release differs: local ${JSON.stringify(local.release)}, remote ${JSON.stringify(remote.graph.release)}` }
   }
   for (const row of remote.graph.entries) if (remote.origin[row.id] === 'user') mirrored.set(row.id, row)

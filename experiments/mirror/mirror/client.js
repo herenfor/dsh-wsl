@@ -178,7 +178,12 @@ window.__ModuleLoader__.load({
         style: { position: 'absolute', top: 'calc(100% + 6px)', left: 8, zIndex: 1100, minWidth: 260, padding: 4, borderRadius: 'var(--dsw-radius-lg, 12px)', background: LAYER, border: `1px solid ${BORDER}`, boxShadow: SHADOW },
       },
       item('local', h(MonitorIcon), 'Windows', state.insideWsl ? '这个文件夹在 WSL 中，只能在 WSL 运行' : '在本机运行', state.insideWsl),
-      item('wsl', h(PenguinIcon), distro, state.wslAvailable ? '在 WSL 中运行' : `${SETUP_NOTE[state.setup] ?? 'WSL 端未连接'}${SETUP_OPENS.has(state.setup) ? '，点击查看' : ''}`, !state.wslAvailable && !wsl && !SETUP_OPENS.has(state.setup), !state.wslAvailable)) : null
+      item('wsl', h(PenguinIcon), distro, state.wslAvailable ? '在 WSL 中运行' : `${SETUP_NOTE[state.setup] ?? 'WSL 端未连接'}${SETUP_OPENS.has(state.setup) ? '，点击查看' : ''}`, !state.wslAvailable && !wsl && !SETUP_OPENS.has(state.setup), !state.wslAvailable),
+      h('div', { style: { height: 1, margin: '4px 6px', background: BORDER } }),
+      h('button', {
+        type: 'button', role: 'menuitem', onClick: () => { setOpen(false); setSetupOpen(true) }, ...hoverable(),
+        style: { display: 'block', width: '100%', padding: '6px 10px 6px 36px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: MUTED, font: 'inherit', fontSize: 12, textAlign: 'left', cursor: 'pointer' },
+      }, 'WSL 运行环境设置…')) : null
       const slowDisk = wsl && typeof state.wslPath === 'string' && state.wslPath.startsWith('/mnt/')
       const row = [
         h('button', {
@@ -231,10 +236,11 @@ window.__ModuleLoader__.load({
     // commands shown, or hands them to a Windows DSH task, then re-checks.
     const SETUP_NOTE = {
       'no-wsl': '这台电脑没有安装 WSL', 'no-distro': 'WSL 里还没有 Linux 发行版', wsl1: '这个发行版是 WSL 1，需要 WSL 2',
-      'needs-node': 'WSL 里还没有装 DSH', 'needs-dsh': 'WSL 里还没有装 DSH', 'version-mismatch': 'WSL 里的 DSH 版本和 Desktop 不同',
-      checking: '正在检查 WSL…', starting: '正在启动 WSL 端…', error: 'WSL 端启动失败', connected: '已连接',
+      choose: '还没有选择在 WSL 里怎么运行 DSH', 'needs-node': 'WSL 里还没有装 DSH', 'needs-dsh': 'WSL 里还没有装 DSH',
+      'version-mismatch': 'WSL 里的 DSH 版本较旧，需要更新', 'desktop-outdated': 'Desktop 版本较旧，需要先升级 Desktop',
+      installing: '正在安装 WSL 端的 DSH…', checking: '正在检查 WSL…', starting: '正在启动 WSL 端…', error: 'WSL 端启动失败', connected: '已连接',
     }
-    const SETUP_OPENS = new Set(['no-wsl', 'no-distro', 'wsl1', 'needs-node', 'needs-dsh', 'version-mismatch', 'error'])
+    const SETUP_OPENS = new Set(['no-wsl', 'no-distro', 'wsl1', 'choose', 'needs-node', 'needs-dsh', 'version-mismatch', 'desktop-outdated', 'installing', 'error'])
     const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
     function CodeBlock({ text }) {
       const [copied, setCopied] = React.useState(false)
@@ -249,8 +255,11 @@ window.__ModuleLoader__.load({
     function SetupDialog({ ui, onClose }) {
       const [s, setS] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const load = (body) => { setBusy(true); return api('wsl-bridge/setup', body).then(setS, (e) => setS({ state: 'error', error: String(e) })).finally(() => setBusy(false)) }
+      const [choosing, setChoosing] = React.useState(false)   // "change" from a connected state
+      const load = (body) => { if (body) setBusy(true); return api('wsl-bridge/setup', body).then(setS, (e) => setS({ state: 'error', error: String(e) })).finally(() => { if (body) setBusy(false) }) }
       React.useEffect(() => { void load() }, [])
+      const waiting = s?.state === 'installing' || s?.state === 'starting' || s?.state === 'checking'
+      React.useEffect(() => { if (!waiting) return undefined; const t = setInterval(() => void load(), 2000); return () => clearInterval(t) }, [waiting])
       const para = (...children) => h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary, inherit)' } }, ...children)
       const note = (...children) => h('div', { style: { fontSize: 12, lineHeight: 1.6, color: FAINT } }, ...children)
       const code = (t) => h('code', { style: { fontFamily: MONO, fontSize: 12 } }, t)
@@ -258,16 +267,49 @@ window.__ModuleLoader__.load({
         type: 'button', onClick, disabled, ...hoverable(primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : undefined),
         style: { padding: '6px 14px', borderRadius: 'var(--dsw-radius-md, 8px)', border: primary ? 0 : `1px solid ${BORDER}`, background: primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : 'transparent', color: primary ? '#fff' : 'inherit', font: 'inherit', fontSize: 13, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 },
       }, label)
+      const row = (...children) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } }, ...children)
       const handToDsh = () => {
         // A Windows folder, so the task runs here (the WSL side is what it is setting up).
         const folder = ui?.workspaces.list.getSnapshot().items.find((w) => !isWsl(w.workspaceId))
         onClose()
         ui?.startSession(folder?.workspaceId, { prompt: s.prompt, whenDraftExists: 'replace' })
       }
+      const choose = (mode) => { setChoosing(false); void load({ mode }) }
+      const card = (mode, title, lines, current) => h('button', {
+        type: 'button', onClick: () => choose(mode), disabled: busy, ...hoverable(),
+        style: { display: 'flex', flexDirection: 'column', gap: 4, width: '100%', padding: '12px 14px', border: `1px solid ${current ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : BORDER}`, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: busy ? 'default' : 'pointer' },
+      }, h('span', { style: { fontSize: 14, fontWeight: 600 } }, title, current ? h('span', { style: { fontWeight: 400, fontSize: 12, color: FAINT, marginLeft: 8 } }, '当前') : null),
+      ...lines.map((l, i) => h('span', { key: i, style: { fontSize: 12, lineHeight: 1.6, color: MUTED } }, l)))
+      const modeCards = () => {
+        const own = s.own
+        const ownCompatible = own && s.desktopVersion && own.version.split('.').slice(0, 2).join('.') === s.desktopVersion.split('.').slice(0, 2).join('.')
+        return [
+          para(own ? `WSL 里已经装了 DSH ${own.version}。Desktop 在 WSL 里运行任务时，用哪一份？` : 'Desktop 在 WSL 里运行任务时，用哪一份 DSH？'),
+          own ? card('reuse', `复用你装的 dsh（${own.version}）`, [
+            '会话同步：Desktop 里在 WSL 运行的任务，和你在 WSL 里自己用 dsh 时是同一份数据，任务记录、文件夹列表、插件互相都看得到。',
+            `版本：两边要保持一致，更新时会一起更新你自己用的 dsh。${ownCompatible ? '' : `现在的 ${own.version} 和 Desktop（${s.desktopVersion}）不兼容，选择后需要先更新。`}`,
+            '不用再下载。',
+          ], s.mode === 'reuse') : null,
+          card('private', '插件专用一份', [
+            '会话不同步：数据单独放在 ~/.dsh-wsl/home，和你自己用的 dsh 互相看不到。',
+            '版本：由插件跟着 Desktop 管理，不影响你自己用的 dsh。',
+            '要单独下载安装（约 250 MB，装好后约 900 MB）。',
+          ], s.mode === 'private'),
+          note('以后可以在这里更改。换一种方式后，之前那种方式下的任务不会出现在列表里，数据不会删除。'),
+        ]
+      }
+      const installRow = (label) => [
+        h(CodeBlock, { text: s.commands }),
+        note('DSH 连同依赖要下载约 250 MB，装好后约 900 MB，通常需要几分钟。如果 npm 提示找不到这个版本，说明它还没有发布到 npm，要等发布后再装。'),
+        row(s.canInstall ? button(label, () => void load({ action: 'install' }), true, busy) : null, ui && s.prompt ? button('交给 DSH 安装', handToDsh, false, busy) : null),
+        note('「', label, '」直接在 WSL 里运行上面的命令；「交给 DSH 安装」新建一个在 Windows 运行的任务，命令写在输入框里，检查后发送。也可以自己在 WSL 终端里运行（开始菜单里的 Ubuntu，或 PowerShell 里的 ', code(`wsl -d ${s.distro ?? 'Ubuntu'}`), '）。'),
+      ]
       let body = [para('正在检查…')]
       if (s) {
         const distro = s.distro ?? 'Ubuntu'
-        if (s.state === 'no-wsl') body = [
+        const ownDsh = s.mode === 'reuse'
+        if (choosing || s.state === 'choose') body = modeCards()
+        else if (s.state === 'no-wsl') body = [
           para('这台电脑还没有安装 WSL。用管理员身份打开 PowerShell，运行：'), h(CodeBlock, { text: 'wsl --install' }),
           note('安装完成后需要重启电脑。重启后第一次打开 Ubuntu 时，按提示设置 Linux 用户名和密码，然后回到这里点「重新检查」。'),
         ]
@@ -278,16 +320,23 @@ window.__ModuleLoader__.load({
         else if (s.state === 'wsl1') body = [
           para(`发行版 ${distro} 运行在 WSL 1 上，需要 WSL 2。在 PowerShell 里运行：`), h(CodeBlock, { text: `wsl --set-version ${distro} 2` }),
         ]
-        else if (['needs-node', 'needs-dsh', 'version-mismatch'].includes(s.state)) body = [
-          s.state === 'version-mismatch'
-            ? para(`Desktop 是 DSH ${s.desktopVersion}，WSL 里给这个插件用的是 ${s.installed}。两边版本必须相同，在 WSL 里更新：`)
-            : para(`WSL 端需要一份和 Desktop 同版本的 DSH（${s.desktopVersion}）。在 WSL（${distro}）的终端里运行下面的命令：`),
-          note('打开终端：开始菜单里的 Ubuntu，或者在 PowerShell 里运行 ', code(`wsl -d ${distro}`), '。这些文件都装在 ~/.dsh-wsl 下，不影响你在 WSL 里自己装的 dsh。'),
-          h(CodeBlock, { text: s.commands }),
-          note('DSH 连同依赖要下载约 250 MB，装好后约 900 MB，通常需要几分钟。如果 npm 提示找不到这个版本，说明它还没有发布到 npm，要等发布后再装。'),
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-            note('也可以把这件事交给 DSH：新建一个在 Windows 运行的任务，命令已经写在输入框里，检查后发送即可。'),
-            ui && s.prompt ? button('交给 DSH 安装', handToDsh) : null),
+        else if (s.state === 'installing') body = [
+          para(`正在 WSL（${distro}）里安装，可能需要几分钟。装好后会自动连接。`),
+          s.job?.log ? h(CodeBlock, { text: s.job.log }) : null,
+        ]
+        else if (s.state === 'needs-node' || s.state === 'needs-dsh') body = [
+          para(ownDsh ? 'WSL 里找不到可用的 Node.js。' : `WSL 端需要一份和 Desktop 同版本的 DSH（${s.desktopVersion}），这份只给这个插件用。`),
+          ...installRow('自动安装'),
+        ]
+        else if (s.state === 'version-mismatch') body = [
+          para(`Desktop 是 DSH ${s.desktopVersion}，WSL 里${ownDsh ? '你的 dsh' : '插件专用的那份'}是 ${s.installed}，两边差得太多，不能一起用。`),
+          ownDsh ? note('更新会一起更新你自己用的 dsh。不想动它，可以改用插件专用的一份。') : null,
+          ...(s.canInstall || s.commands ? installRow(`自动更新到 ${s.desktopVersion}`) : [note('请把 WSL 里的 dsh 更新到和 Desktop 相同的版本，再点「重新检查」。')]),
+        ]
+        else if (s.state === 'desktop-outdated') body = [
+          para(`WSL 里${ownDsh ? '你的 dsh' : '的 DSH'}是 ${s.installed ?? s.wslVersion}，比 Desktop（${s.desktopVersion}）新，差得太多，不能一起用。`),
+          para('请先升级 Desktop：在 Desktop 里检查更新，或者到官网下载最新版本。升级后会自动重新检查。'),
+          ownDsh ? note('也可以改用插件专用的一份，它会跟着 Desktop 的版本。') : null,
         ]
         else if (s.state === 'error') body = [
           para('WSL 端没能启动。'),
@@ -296,15 +345,22 @@ window.__ModuleLoader__.load({
           s.log ? note('详细日志在 WSL 里的 ', code(s.log), '。') : null,
         ]
         else if (s.state === 'starting' || s.state === 'checking') body = [para('正在启动 WSL 端…'), note('第一次启动需要建好 WSL 端的配置，可能要半分钟。')]
-        else if (s.state === 'connected') body = [para(`已连接：WSL（${distro}）中的 DSH ${s.wslVersion ?? ''}。现在可以在输入框下方把运行位置切换到 ${distro}。`)]
+        else if (s.state === 'connected') {
+          body = [para(`已连接：WSL（${distro}）中的 DSH ${s.wslVersion ?? ''}。现在可以在输入框下方把运行位置切换到 ${distro}。`)]
+          if (s.drift === 'wsl-older') body.push(note(`两边版本略有不同（Desktop ${s.desktopVersion}，WSL ${s.wslVersion}），可以正常使用。`), ...(s.canInstall ? [row(button(`更新 WSL 到 ${s.desktopVersion}`, () => void load({ action: 'install' }), false, busy))] : []))
+          if (s.drift === 'wsl-newer') body.push(note(`WSL 的 DSH（${s.wslVersion}）比 Desktop（${s.desktopVersion}）新一些，可以正常使用；建议升级 Desktop。`))
+        }
+        if (s.job && !s.job.running && s.job.code !== 0 && s.state !== 'installing') body.push(para('上次安装没有成功：', s.job.error ?? ''), s.job.log ? h(CodeBlock, { text: s.job.log }) : null)
+        if (s.mode && !choosing && s.state !== 'choose' && !s.dev) body.push(row(note(`运行方式：${s.mode === 'reuse' ? '复用你装的 dsh（会话同步）' : '插件专用一份（会话不同步）'}`),
+          h('button', { type: 'button', onClick: () => setChoosing(true), style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, '更改')))
         if (s.distros?.length > 1) body.push(h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } }, '发行版',
-          h('select', { value: distro, disabled: busy, onChange: (e) => void load({ distro: e.target.value }), style: { padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } },
+          h('select', { value: distro, disabled: busy || s.state === 'installing', onChange: (e) => void load({ distro: e.target.value }), style: { padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } },
             ...s.distros.map((d) => h('option', { key: d, value: d }, d)))))
       }
       return h(Modal, {
-        title: '设置 WSL 运行环境', onClose, width: 560,
+        title: '设置 WSL 运行环境', onClose, width: 580,
         footer: h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
-          button(busy ? '检查中…' : '重新检查', () => void load({ action: 'recheck' }), false, busy),
+          button(busy ? '检查中…' : '重新检查', () => void load({ action: 'recheck' }), false, busy || s?.state === 'installing'),
           button(s?.state === 'connected' ? '完成' : '关闭', onClose, s?.state === 'connected')),
       }, ...body.filter(Boolean))
     }

@@ -4,6 +4,7 @@
 // `fetchBundle`) and restores them on dispose. HTTP routes that only the WSL Host serves (those of plugins installed
 // only in WSL) are registered here too and forwarded, after this Host's own login and origin check.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -11,13 +12,13 @@ import http from 'node:http'
 import { isDeepStrictEqual } from 'node:util'
 import { Readable } from 'node:stream'
 import { startBridge } from './transport/client.mjs'
-import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
+import { mergeGraphs, requestedPackages, compatibleReleases } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
-import { check as checkWsl } from './setup.mjs'
+import { check as checkWsl, compareVersions } from './setup.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
@@ -32,7 +33,7 @@ const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-len
 // launch token arrive over the bridge and stay in memory.
 export const BRIDGE_FILE = join(homedir(), '.dsh-wsl', 'bridge.json')
 export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
-export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro } chosen by the person
+export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro, mode } chosen by the person
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 function writeStatus(status) {
   try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
@@ -49,12 +50,14 @@ export async function apply(ctx, config = {}) {
   // First-run setup (setup.mjs): the state of the WSL side, asked again before every connect and on "re-check".
   let setup = { state: 'checking' }
   let checking
+  let job          // the install/update the person started: { running, log[], code?, error? }
   async function resolveBridge() {
     if (bridgeConfig.command) { setup = { state: 'ready', dev: true }; return { command: bridgeConfig.command, args: bridgeConfig.args ?? [] } }
+    if (job?.running) return null
     checking ??= checkWsl({
       wsl: process.env.DSH_WSL_COMMAND ?? 'wsl.exe',
       desktopVersion: ctx.clientModules.composed?.release?.version,
-      chosen: readJson(CONFIG_FILE).distro,
+      chosen: readJson(CONFIG_FILE),
       pluginDir: PLUGIN_DIR,
     }).then((status) => { setup = status; return status }, (error) => { setup = { state: 'error', error: error.message }; return setup }).finally(() => { checking = undefined })
     const status = await checking
@@ -135,7 +138,7 @@ export async function apply(ctx, config = {}) {
   const ws = ctx.webServer
   const forwarded = new Map()
   function syncRoutes() {
-    const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+    const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
     const local = {
       exact: [...ws.exact.keys()].filter((path) => !forwarded.has(`exact:${path}`)),
       prefix: [...ws.prefixes.keys()].filter((path) => !forwarded.has(`prefix:${path}`)),
@@ -202,7 +205,7 @@ export async function apply(ctx, config = {}) {
       if (req.method === 'POST') {
         try { const t = JSON.parse((await readBody(req)).toString('utf8')).target; if (t === 'wsl' || t === 'local') installTarget = t } catch {}
       }
-      const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+      const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? setup.distro ?? null, setup: publicSetup().state }))
     },
@@ -221,7 +224,7 @@ export async function apply(ctx, config = {}) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
       const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
-      const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+      const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
       if (!sameVersion) return reply({ connected: false })
       try {
         let result
@@ -290,7 +293,7 @@ export async function apply(ctx, config = {}) {
   // Each Session runs on this Host or the WSL Host (routing.mjs).
   const routing = installSessionRouting(ctx, {
     bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody,
-    available: () => remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release),
+    available: () => remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release),
     distro: () => remoteGraph?.distro ?? setup.distro,
     setupState: () => publicSetup().state,
   })
@@ -302,15 +305,64 @@ export async function apply(ctx, config = {}) {
     let state = s.state
     const dsh = bridge.state.dsh
     const failed = !bridge.state.connected && bridge.state.lastError
-    if (state === 'ready') state = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release) ? 'connected' : dsh.state === 'stopped' || failed ? 'error' : 'starting'
+    const wslVersion = remoteGraph?.graph.release?.version ?? null
+    const desktopVersion = raw.release?.version ?? null
+    if (state === 'ready') {
+      if (remoteGraph !== undefined && !compatibleReleases(raw.release, remoteGraph.graph.release)) state = compareVersions(wslVersion, desktopVersion) < 0 ? 'version-mismatch' : 'desktop-outdated'
+      else state = remoteGraph !== undefined ? 'connected' : dsh.state === 'stopped' || failed ? 'error' : 'starting'
+    }
+    if (job?.running) state = 'installing'
     return {
       state, distro: s.distro ?? remoteGraph?.distro ?? null, distros: (s.distros ?? []).map((d) => d.name), dev: !!s.dev,
-      desktopVersion: raw.release?.version ?? null, installed: s.installed ?? null, wslVersion: remoteGraph?.graph.release?.version ?? null,
-      commands: s.commands ?? '', prompt: s.prompt ?? '', probeError: s.probeError ?? null,
+      mode: s.mode ?? null, own: s.own ? { version: s.own.version, path: s.own.entry } : null,
+      // Once connected, the versions that matter are the running ones.
+      drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,
+      desktopVersion, installed: s.installed ?? wslVersion, wslVersion,
+      commands: s.commands ?? '', prompt: s.prompt ?? '', canInstall: !!s.script && !s.dev, probeError: s.probeError ?? null,
+      job: job ? { running: job.running, log: job.log.slice(-12).join('\n'), code: job.code ?? null, error: job.error ?? null } : null,
       error: s.error ?? (dsh.state === 'stopped' ? dsh.exit?.error ?? `DSH exited (${dsh.exit?.code ?? dsh.exit?.signal ?? '?'})` : failed ? bridge.state.lastError : null),
       log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
     }
   }
+  // The install/update button: runs setup's script in WSL (it stops the daemon first, then installs or updates DSH).
+  // Only on the person's click; the bridge stays down meanwhile and connects again when it is done.
+  function startInstall() {
+    if (job?.running || !setup.script || setup.dev) return
+    const version = raw.release?.version
+    job = { running: true, log: [], startedAt: Date.now() }
+    const current = job
+    const child = spawn(process.env.DSH_WSL_COMMAND ?? 'wsl.exe', ['-d', setup.distro, '--exec', 'bash', '-c', setup.script], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let partial = ''
+    const take = (chunk) => {
+      partial += chunk.toString('utf8').replace(/\r/g, '\n')
+      const lines = partial.split('\n'); partial = lines.pop()
+      for (const line of lines) if (line.trim()) current.log.push(line.slice(0, 300))
+      if (current.log.length > 400) current.log.splice(0, current.log.length - 200)
+    }
+    child.stdout.on('data', take); child.stderr.on('data', take)
+    const timer = setTimeout(() => child.kill(), 30 * 60_000); timer.unref?.()
+    let finished = false
+    const finish = async (code, error) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      if (partial.trim()) current.log.push(partial)
+      const text = current.log.join('\n')
+      current.code = code
+      if (code !== 0) {
+        current.error = /ETARGET|No matching version|notarget/i.test(text) ? `npm 上还没有 @deepseek-ai/dsh@${version}，要等它发布后再装。`
+          : /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network/i.test(text) ? '网络连接失败，可以稍后重试。'
+            : error ?? current.log.filter((l) => /err/i.test(l)).slice(-1)[0] ?? `安装失败（退出码 ${code}）`
+      }
+      current.running = false
+      ctx.logger.info('wsl-mirror: WSL install finished with %s', code)
+      await resolveBridge(); bridge.retry()
+    }
+    child.once('error', (e) => void finish(null, e.message))
+    child.once('exit', (code) => void finish(code))
+  }
+  ctx.effect(() => () => { if (job?.running) job.running = false }, 'wsl-mirror: install job')
+
   ctx.effect(() => ws.register({
     kind: 'exact', path: '/wsl-bridge/setup',
     async handler(req, res) {
@@ -319,9 +371,16 @@ export async function apply(ctx, config = {}) {
       if (req.method === 'POST') {
         let body = {}
         try { body = JSON.parse((await readBody(req)).toString('utf8')) } catch {}
+        const remember = (patch) => { try { mkdirSync(dirname(CONFIG_FILE), { recursive: true }); writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...readJson(CONFIG_FILE), ...patch }, null, 2)}\n`) } catch {} }
         if (typeof body.distro === 'string' && body.distro !== readJson(CONFIG_FILE).distro) {
-          try { mkdirSync(dirname(CONFIG_FILE), { recursive: true }); writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...readJson(CONFIG_FILE), distro: body.distro }, null, 2)}\n`) } catch {}
+          remember({ distro: body.distro })
           await resolveBridge(); bridge.restart()
+        } else if ((body.mode === 'reuse' || body.mode === 'private') && body.mode !== readJson(CONFIG_FILE).mode) {
+          // Another DSH and another DSH home: the daemon is replaced on the next connect.
+          remember({ mode: body.mode })
+          await resolveBridge(); bridge.restart()
+        } else if (body.action === 'install') {
+          startInstall()
         } else if (body.action === 'recheck') {
           if (!bridge.state.connected) { await resolveBridge(); bridge.retry() }
         }
@@ -350,7 +409,7 @@ export async function apply(ctx, config = {}) {
     try {
       do {
         syncAgain = false
-        if (remoteGraph === undefined || !sameRelease(raw.release, remoteGraph.graph.release)) return
+        if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return
         const mine = ctx.settings.describe({ redactSecrets: true })
         const theirs = await callSettings('describe', {})
         const changed = []
@@ -376,7 +435,7 @@ export async function apply(ctx, config = {}) {
   ctx.on('connection/request', guarded(async (req, res, next) => {
     const pathname = new URL(req.url ?? '/', 'http://x').pathname
     const method = settingsMethod(pathname)
-    const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+    const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
     if (req.headers[INNER] !== undefined) return next()
     const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]
     if (!sameVersion && installTarget === 'wsl' && INSTALL_ENDPOINTS.has(endpoint)) {

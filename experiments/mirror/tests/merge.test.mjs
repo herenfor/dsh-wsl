@@ -34,7 +34,7 @@ test('every row is in exactly one batch, and no batch still carries a replaced r
 })
 
 test('a remote of another release is not mirrored', () => {
-  const r = mergeGraphs(local, { ...remote, graph: { ...remote.graph, release: { version: '0.2.3' } } }, order)
+  const r = mergeGraphs(local, { ...remote, graph: { ...remote.graph, release: { version: '0.3.0' } } }, order)
   assert.equal(r.graph, local)
   assert.equal(r.mirrored.size, 0)
   assert.match(r.reason, /release differs/)

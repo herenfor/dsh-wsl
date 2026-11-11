@@ -59,6 +59,8 @@
 | 守护进程 | `transport/daemon.mjs` | 新增 `--dsh`、`--stamp`、`--dsh-home` 参数。启动 DSH 前，如果 `desktop-wsl` 配置不存在，就用 web 模板创建（`dsh desktop-wsl --from-default-profile web --dump-config`）；如果配置里没有 `dsh-wsl-agent`，就加进去（`dsh plugin --profile desktop-wsl add link:~/.dsh-wsl/bridge/agent`），两步都不联网。连接文件、DSH 或 DSH home 变了时，新连接会替换旧的守护进程，旧的 DSH Host 随之停止 |
 | 设置接口 | `mirror/index.mjs` | `/wsl-bridge/setup`：GET 返回状态、命令、提示词、安装进度；POST `{action:'recheck'}` 重新检查并连接，POST `{distro}` / `{mode}` 切换发行版、运行方式并记到 `~/.dsh-wsl/config.json`，POST `{action:'install'}` 在 WSL 里运行 `installScript`（先停守护进程，再安装），期间不连接，完成后自动连接。`run-target`、`install-target` 也带上状态 |
 | 版本 | `merge.mjs` 的 `compatibleReleases`、`setup.mjs` 的 `compareVersions` | 前两段相同即可连接；semver 顺序（预发布排在正式版前，数字段按数字比较） |
+| 插件自动更新 | `mirror/selfupdate.mjs` | 启动一分钟后检查一次，之后每 6 小时一次：`pluginManager.listBundles` 确认自己是从仓库安装的（`updatable`），`listVersions` 列出新版本，`pickUpdate` 选最新的、声明了组合包、不被 `engines.dsh` 拒绝、没有弃用、且不是预发布（除非当前就是预发布）的版本，`updateBundle` 替换。失败时 DSH 会装回旧版本。WSL 端插件和连接文件随之在下次连接时更新（STAMP）。`config.json` 的 `autoUpdate: false` 关闭；设置窗口底部显示插件版本、状态、“检查更新”和开关 |
+| 版本范围 | `mirror/package.json` | `engines.dsh: ">=0.2.0-0 <0.3.0-0"`。DSH 按 `includePrerelease` 比较，所以 0.2.x 的预发布也在范围内，0.3 的预发布不在 |
 | 用户自己的 dsh | `setup.mjs` 的探测脚本 | `bash -lc 'command -v dsh'`、`~/.local/bin/dsh`、`/usr/local/bin/dsh`、`/usr/bin/dsh`，顺着真实路径找到 `@deepseek-ai/dsh` 的 package.json；npm 全局安装时推出前缀，用于更新命令 |
 | 页面 | `mirror/client.js` | `SetupDialog`；环境选择器和“添加文件夹”按状态显示 |
 
@@ -87,9 +89,18 @@
 | WSL 的 DSH 是 0.2.9 | 照常连接，标记为 WSL 略新 |
 | 已连接时打开设置 | 下拉菜单底部的“WSL 运行环境设置…”可用；版本差异按实际运行的版本判断 |
 
-单元测试：`node --test tests/setup.test.mjs`（6 个），覆盖 `wsl.exe` 的 UTF-16 输出、检测结果（含用户自己的 dsh）、版本顺序和兼容、各状态、命令、安装脚本和提示词、连接文件复制。
+插件自动更新（2026-11-12，本地 npm 仓库 verdaccio，单独的测试 Desktop）：
+
+| 检查 | 结果 |
+|---|---|
+| 从本地仓库装 0.0.1，仓库里有 0.0.2 | “检查更新”约 6 秒完成，状态“已更新到 0.0.2”；热替换，不用重启；新实例报告 0.0.2，配置里的依赖变为 0.0.2 |
+| 仓库里又有 0.0.3，声明 `engines.dsh >=0.3.0-0` | 跳过，显示“已是最新” |
+| 关闭自动更新 | 写入 `config.json`，设置窗口立即显示“自动更新已关闭” |
+| 从本地文件夹安装（开发机） | 显示“从本地文件夹或 Git 地址安装，不会自动更新” |
+
+单元测试：`node --test tests/setup.test.mjs`（7 个，含 `pickUpdate`），覆盖 `wsl.exe` 的 UTF-16 输出、检测结果（含用户自己的 dsh）、版本顺序和兼容、各状态、命令、安装脚本和提示词、连接文件复制。
 
 ## 还没做
 
-- 插件本身的自动更新与发布（npm）：见上面决定 8。
+- 发布到 npm：包名、npm 账号、许可证（仓库已公开，但还没有 LICENSE）。发布前把 `private: true` 去掉，定一个正式版本号。
 - 开发机切换到正式流程：删除 `C:\Users\S\.dsh-wsl\bridge.json` 后，按设置窗口的命令在 `~/.dsh-wsl` 装一份 DSH。这会改动用户的环境，要先问用户。

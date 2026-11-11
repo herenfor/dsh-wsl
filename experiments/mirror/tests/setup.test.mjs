@@ -112,3 +112,13 @@ test('bridge files are copied once per content stamp', () => {
   assert.equal(hostPathOf('win32', 'Ubuntu', '/home/s'), '\\\\wsl.localhost\\Ubuntu\\home\\s')
   assert.equal(hostPathOf('linux', 'Ubuntu', '/home/s'), '/home/s')
 })
+
+test('plugin updates: newest compatible, not deprecated, releases only unless on a prerelease', async () => {
+  const { pickUpdate } = await import('../mirror/selfupdate.mjs')
+  const v = (version, extra = {}) => ({ version, tags: [], prerelease: /-/.test(version), bundle: true, ...extra })
+  const list = { status: 'listed', versions: [v('0.4.0', { incompatible: { range: '>=0.3' } }), v('0.3.1-rc.1'), v('0.3.0', { deprecated: 'broken' }), v('0.2.9'), v('0.2.8')] }
+  assert.equal(pickUpdate(list, '0.2.5').version, '0.2.9')
+  assert.equal(pickUpdate(list, '0.2.5-rc.1').version, '0.3.1-rc.1')
+  assert.equal(pickUpdate({ status: 'listed', versions: [v('0.5.0', { bundle: false })] }, '0.2.5'), undefined)
+  assert.equal(pickUpdate({ status: 'refused' }, '0.2.5'), undefined)
+})

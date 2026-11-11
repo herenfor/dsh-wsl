@@ -19,6 +19,7 @@ import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix }
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { check as checkWsl, compareVersions } from './setup.mjs'
+import { installSelfUpdate } from './selfupdate.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
@@ -319,11 +320,20 @@ export async function apply(ctx, config = {}) {
       drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,
       desktopVersion, installed: s.installed ?? wslVersion, wslVersion,
       commands: s.commands ?? '', prompt: s.prompt ?? '', canInstall: !!s.script && !s.dev, probeError: s.probeError ?? null,
+      plugin: selfUpdate.state(),
       job: job ? { running: job.running, log: job.log.slice(-12).join('\n'), code: job.code ?? null, error: job.error ?? null } : null,
       error: s.error ?? (dsh.state === 'stopped' ? dsh.exit?.error ?? `DSH exited (${dsh.exit?.code ?? dsh.exit?.signal ?? '?'})` : failed ? bridge.state.lastError : null),
       log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
     }
   }
+  // This plugin's own updates (selfupdate.mjs).
+  const own = readJson(join(PLUGIN_DIR, 'package.json'))
+  const selfUpdate = installSelfUpdate(ctx, {
+    name: own.name, version: own.version,
+    auto: () => readJson(CONFIG_FILE).autoUpdate !== false,
+    log: (m) => ctx.logger.info('wsl-mirror: %s', m),
+  })
+
   // The install/update button: runs setup's script in WSL (it stops the daemon first, then installs or updates DSH).
   // Only on the person's click; the bridge stays down meanwhile and connects again when it is done.
   function startInstall() {
@@ -379,6 +389,11 @@ export async function apply(ctx, config = {}) {
           // Another DSH and another DSH home: the daemon is replaced on the next connect.
           remember({ mode: body.mode })
           await resolveBridge(); bridge.restart()
+        } else if (typeof body.autoUpdate === 'boolean') {
+          remember({ autoUpdate: body.autoUpdate })
+          if (body.autoUpdate) void selfUpdate.check()
+        } else if (body.action === 'check-plugin') {
+          await selfUpdate.check()
         } else if (body.action === 'install') {
           startInstall()
         } else if (body.action === 'recheck') {

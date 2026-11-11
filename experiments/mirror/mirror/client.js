@@ -353,6 +353,17 @@ window.__ModuleLoader__.load({
         if (s.job && !s.job.running && s.job.code !== 0 && s.state !== 'installing') body.push(para('上次安装没有成功：', s.job.error ?? ''), s.job.log ? h(CodeBlock, { text: s.job.log }) : null)
         if (s.mode && !choosing && s.state !== 'choose' && !s.dev) body.push(row(note(`运行方式：${s.mode === 'reuse' ? '复用你装的 dsh（会话同步）' : '插件专用一份（会话不同步）'}`),
           h('button', { type: 'button', onClick: () => setChoosing(true), style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, '更改')))
+        if (s.plugin) {
+          const p = s.plugin
+          const said = { waiting: '启动约一分钟后检查更新', off: '自动更新已关闭', checking: '正在检查更新…', 'not-updatable': '从本地文件夹或 Git 地址安装，不会自动更新',
+            'up-to-date': '已是最新', updating: `正在更新到 ${p.latest}…`, updated: `已更新到 ${p.latest}`, 'restart-required': `已更新到 ${p.latest}，重启 Desktop 后生效`,
+            failed: `检查更新失败：${p.error ?? ''}` }[p.status] ?? ''
+          const link = (label, onClick) => h('button', { type: 'button', onClick, disabled: busy, style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, label)
+          body.push(h('div', { style: { height: 1, background: BORDER } }),
+            row(note(`插件 ${p.name} ${p.version} · ${said}`),
+              p.auto && p.status !== 'not-updatable' ? link('检查更新', () => void load({ action: 'check-plugin' })) : null,
+              link(p.auto ? '关闭自动更新' : '打开自动更新', () => void load({ autoUpdate: !p.auto }))))
+        }
         if (s.distros?.length > 1) body.push(h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } }, '发行版',
           h('select', { value: distro, disabled: busy || s.state === 'installing', onChange: (e) => void load({ distro: e.target.value }), style: { padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } },
             ...s.distros.map((d) => h('option', { key: d, value: d }, d)))))

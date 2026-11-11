@@ -153,13 +153,13 @@ export async function apply(ctx, config = {}) {
   }
   ctx.effect(() => () => { for (const dispose of forwarded.values()) dispose(); forwarded.clear() }, 'wsl-mirror: forwarded routes')
 
-  async function forwardRequest(req, res) {
+  async function forwardRequest(req, res, { origin = false } = {}) {
     const admission = ctx.connection.admit(req)
     if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
     const abort = new AbortController()
     res.on('close', () => abort.abort())
     try {
-      const headers = { cookie: await cookie() }
+      const headers = { cookie: await cookie(), ...(origin ? { origin: remoteOrigin() } : {}) }
       for (const name of FORWARD_REQUEST_HEADERS) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name]
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
       const upstream = await remoteFetch(req.url, { method: req.method, headers, signal: abort.signal, ...(hasBody ? { body: req } : {}) })
@@ -173,6 +173,15 @@ export async function apply(ctx, config = {}) {
       if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
       res.end(`wsl-mirror: the WSL Host did not answer (${error.message})\n`)
     }
+  }
+
+  /** Whether `path` is an exact Fetch route the WSL Host has for `method` and this Host does not. */
+  function wslFetchRoute(path, method) {
+    const route = remoteGraph?.routes?.fetch?.find((r) => r.path === path)
+    if (!route?.methods.includes(method)) return false
+    let mine
+    try { mine = ctx.connection.fetchRoutes?.get(path) } catch {}
+    return !mine?.methods?.has(method)
   }
 
   // Settings of plugins installed only in WSL, through the /api request hook client-connection runs after admission.
@@ -456,6 +465,8 @@ export async function apply(ctx, config = {}) {
     const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
     if (req.headers[INNER] !== undefined) return next()
+    // A Fetch route only a WSL plugin registered (DS Bot's /api/bot and its live feed): pass the request through.
+    if (sameVersion && wslFetchRoute(pathname, req.method)) return forwardRequest(req, res, { origin: true })
     const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]
     if (!sameVersion && installTarget === 'wsl' && INSTALL_ENDPOINTS.has(endpoint)) {
       // Never fall back to installing on this Host when the person chose WSL.

@@ -18,26 +18,29 @@ export function builtinRoot(modulesClientPath) {
   return dirname(dirname(dirname(dirname(real(modulesClientPath)))))
 }
 
-// The WSL Host's HTTP route table (path names only), read from the web server's private maps.
-export function routeTable(ws) {
-  return { exact: [...(ws.exact?.keys() ?? [])], prefix: [...(ws.prefixes?.keys() ?? [])], upgrade: [...(ws.upgrades?.keys() ?? [])] }
+// The WSL Host's HTTP route table (path names only), read from the web server's private maps, and the exact Fetch
+// routes plugins register under /api (`ctx.connection.fetch.register`, e.g. DS Bot's /api/bot), with their methods.
+export function routeTable(ws, connection) {
+  const fetch = [...(connection?.fetchRoutes ?? [])].map(([path, route]) => ({ path, methods: [...(route.methods ?? [])] }))
+  return { exact: [...(ws.exact?.keys() ?? [])], prefix: [...(ws.prefixes?.keys() ?? [])], upgrade: [...(ws.upgrades?.keys() ?? [])], fetch }
 }
 
-export function snapshot(cm, root, ws) {
+export function snapshot(cm, root, ws, connection) {
   const graph = cm.graph()
   const origin = {}
   for (const row of graph.entries) {
     const path = cm.clientPath(row.id)
     origin[row.id] = path !== undefined && real(path).startsWith(root + sep) ? 'builtin' : 'user'
   }
-  return { graph, origin, routes: ws ? routeTable(ws) : undefined, distro: process.env.WSL_DISTRO_NAME }
+  return { graph, origin, routes: ws ? routeTable(ws, connection) : undefined, distro: process.env.WSL_DISTRO_NAME }
 }
 
 export function apply(ctx) {
   const cm = ctx.clientModules
   const root = builtinRoot(cm.clientPath(MODULES_ID))
   const clients = new Set()
-  const frame = () => `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer))}\n\n`
+  const connection = () => { try { return ctx.get('connection') } catch { return undefined } }
+  const frame = () => `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection()))}\n\n`
   const push = () => { const f = frame(); for (const res of clients) res.write(f) }
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
@@ -53,8 +56,8 @@ export function apply(ctx) {
   ctx.effect(() => cm.onGraphChanged(push), 'wsl-agent: graph changes')
   // Routes change when plugins start or stop and the web server announces nothing, so compare every two seconds.
   ctx.effect(() => {
-    let last = JSON.stringify(routeTable(ctx.webServer))
-    const timer = setInterval(() => { const now = JSON.stringify(routeTable(ctx.webServer)); if (now !== last) { last = now; push() } }, 2000)
+    let last = JSON.stringify(routeTable(ctx.webServer, connection()))
+    const timer = setInterval(() => { const now = JSON.stringify(routeTable(ctx.webServer, connection())); if (now !== last) { last = now; push() } }, 2000)
     timer.unref()
     return () => clearInterval(timer)
   }, 'wsl-agent: route changes')

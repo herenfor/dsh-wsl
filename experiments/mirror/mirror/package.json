@@ -1,6 +1,7 @@
 {
   "name": "dsh-wsl-mirror",
   "version": "0.0.0-experiment",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {

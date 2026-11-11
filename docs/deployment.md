@@ -102,5 +102,9 @@
 
 ## 还没做
 
-- 发布到 npm：包名、npm 账号、许可证（仓库已公开，但还没有 LICENSE）。发布前把 `private: true` 去掉，定一个正式版本号。
+- 发布到 npm（2026-11-12 定：包名 `@herenfor/dsh-wsl`，许可证 MIT，已加 LICENSE）。发布时：
+  - 包名从 `dsh-wsl-mirror` 改为 `@herenfor/dsh-wsl`（`package.json`、`cordis.patch.yml` 的模块名、`client.js` 的模块 ID），去掉 `private: true`，定正式版本号；
+  - 用户自己 `npm login` 后发布；
+  - 用户的 Desktop 改为从 npm 安装（替换现在 `link:C:\Users\S\dsh-wsl-test\mirror` 的安装），之后才能自动更新。
+  - 现在不改名，是因为 Desktop 按旧名字从本地文件夹安装，改名会让它找不到插件。
 - 开发机切换到正式流程：删除 `C:\Users\S\.dsh-wsl\bridge.json` 后，按设置窗口的命令在 `~/.dsh-wsl` 装一份 DSH。这会改动用户的环境，要先问用户。

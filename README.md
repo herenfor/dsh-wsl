@@ -13,8 +13,12 @@
 - [docs/panel.md](docs/panel.md)：官方插件页同时管理两边的插件。
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据（调研）。
 - [docs/session-routing.md](docs/session-routing.md)：按会话分流，每个任务在 Windows 或 WSL 中运行，侧栏列出两边。
-- [docs/deployment.md](docs/deployment.md)：首次安装，WSL 端缺什么、怎么补（给命令或交给 DSH，不自动下载）。
+- [docs/deployment.md](docs/deployment.md)：首次安装，WSL 端缺什么、怎么补（复用或插件专用、安装与更新按钮、版本规则、插件自动更新）。
 
 ## 实验
 
 - [experiments/mirror](experiments/mirror)：界面镜像。插件只装在 WSL，界面出现在 Desktop 窗口（已在 WSL 内两个 DSH 间验证，DSH 0.2.2-rc.1）。
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。`experiments/mirror/mirror/ids.mjs` 中的 ID 字段表改编自 [dsh-ssh-workspaces](https://github.com/czp0312/dsh-ssh-workspace)（MIT），其版权声明随插件包一起分发（`experiments/mirror/mirror/LICENSE`）。

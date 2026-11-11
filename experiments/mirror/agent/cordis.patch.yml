@@ -1,0 +1,3 @@
+- insert:
+    - id: wsl-agent
+      name: dsh-wsl-agent

@@ -1,0 +1,3 @@
+- insert:
+    - id: wsl-mirror
+      name: dsh-wsl-mirror

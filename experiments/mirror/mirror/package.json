@@ -1,0 +1,9 @@
+{
+  "name": "dsh-wsl-mirror",
+  "version": "0.0.0-experiment",
+  "private": true,
+  "type": "module",
+  "description": "Experiment: runs in the Desktop-side Host and merges the user plugin rows of a WSL Host's client module graph into its own, serving their bundles from the WSL Host.",
+  "exports": { ".": "./index.mjs" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "manifestVersion": 1 }
+}

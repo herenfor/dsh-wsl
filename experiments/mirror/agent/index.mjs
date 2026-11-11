@@ -29,7 +29,7 @@ export function snapshot(cm, root, ws) {
     const path = cm.clientPath(row.id)
     origin[row.id] = path !== undefined && real(path).startsWith(root + sep) ? 'builtin' : 'user'
   }
-  return { graph, origin, routes: ws ? routeTable(ws) : undefined }
+  return { graph, origin, routes: ws ? routeTable(ws) : undefined, distro: process.env.WSL_DISTRO_NAME }
 }
 
 export function apply(ctx) {

@@ -75,4 +75,37 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
 | 停用和启用 | 经 A 停用 WSL 的 probe 后，B 上该插件停止，A 转发的路由随之消失；再启用后恢复 |
 | 安装和卸载 | 经 A 安装 `wsl:/home/s/dsh-sentinel`，装进 B 的 `desktop-wsl` profile，A 的 profile 不变；经 A 卸载后 B 恢复原样 |
 
-待定：在官方"添加插件"对话框里怎么选择装到哪一边。目前要在包名前手动加 `wsl:`，只是实验做法。
+
+
+## 安装位置（2026-11-11，已实现并在 WSL 内验证）
+
+官方"添加插件"下拉菜单有两项："安装第三方插件"（一个输入框，支持 npm 包名、GitHub 仓库地址、本地目录路径三种形式，另有注册表选择）和"让 agent 创建插件"（Creator 模式）。下拉菜单里的额外项来自官方插槽 `plugins.add.actions`。
+
+- mirror 通过这个插槽在菜单里加了一项"安装位置：WSL（发行版名）"，左侧有色条（WSL 橙色、Windows 蓝色），点击在 WSL 和 Windows 之间切换，默认 WSL。"安装第三方插件"的 `inspect` 和 `installBundle` 按这个位置发送。
+- **本地目录**：装到 WSL 时，Windows 路径会自动换成 WSL 路径（`C:\…` → `/mnt/c/…`，`\\wsl.localhost\<发行版>\…` 和 `\\wsl$\…` → `/…`）。装到 Windows 时，WSL 路径会换成 Windows 路径（`/mnt/c/…` → `C:\…`，`/home/…` → `\\wsl.localhost\<发行版>\home\…`）。
+- **不静默回退**：位置选了 WSL，但 WSL Host 未连接或版本不同时，安装直接报错并提示切换，不会改装到 Windows。mirror 与 WSL Host 断开时会清掉旧的清单，重新连上后自动恢复（会重新读取 `remote.json`，WSL Host 重启后令牌变了也能连上）。
+
+验证（经 A 装进 B，然后卸载，B 的 profile 恢复原样，A 的 profile 全程不变）：
+
+| 形式 | 例子 | 结果 |
+|---|---|---|
+| npm 包 | `dsh-ssh-workspaces` | 装进 WSL |
+| Git 仓库 | `github:herenfor/dsh-sentinel#v0.3.1` | 装进 WSL（WSL 自己的 git） |
+| 本地目录 | `C:\Users\S\dsh-wsl-test\mirror` | 换成 `/mnt/c/…` 后装进 WSL |
+| WSL 断开 | 同上 | 返回"The WSL Host is not connected…"，没有装到 Windows |
+
+"让 agent 创建插件"会开一个 Creator 会话，它在哪边运行属于按会话分流，暂不处理。
+
+截图：`images/plugins-add-menu.png`。
+
+## 官方内置插件的两边显示（待决定）
+
+官方插件页按包名的固定列表决定内置插件怎么显示：哪些隐藏、哪些排在前面、哪些收进"More"、哪些带"Experimental"标记，都是精确匹配。WSL 一侧的 ID 加了 `wsl:` 前缀，所以：
+
+- 核心包（`dsh-base` 等）在两边都不显示，正常；
+- Windows 的实验插件保持官方样式：5 个在列表里、带 Experimental 标记，其余收进 More；
+- WSL 的实验插件 14 个全部列出，没有 Experimental 标记，排在 Windows 的后面。
+
+截图：`images/plugins-experimental-both-sides.png`、`images/plugins-installed-both-sides.png`。
+
+另一种做法：官方内置插件每个只占一行（保持官方样式），标题标出两边的状态，例如"Agent teams · Windows 已启用 · WSL 未启用"；WSL 一侧的开关放在插件详情页（官方插槽 `plugins.detail.actions`）。用户自己装的插件不受影响，仍按两边各列一行。

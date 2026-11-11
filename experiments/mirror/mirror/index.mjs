@@ -12,6 +12,7 @@ import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES } from './settings.mjs'
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
+import { toWindowsSpec, toWslSpec } from './paths.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection']
@@ -100,6 +101,27 @@ export async function apply(ctx, config = {}) {
   // The official Plugins page over both Hosts (see plugins.mjs). Installs started on the WSL Host are remembered by
   // request id, so waiting for or cancelling them goes there too.
   const wslInstalls = new Set()
+  // Where the official "Install a third-party plugin" dialog installs: 'wsl' (default) or 'local'. Shown and switched by
+  // this package's item in the Add plugin menu; GET/POST /wsl-bridge/install-target {"target": "wsl" | "local"}.
+  let installTarget = 'wsl'
+  const INSTALL_ENDPOINTS = new Set(['pluginManager/inspect', 'pluginManager/installBundle'])
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/install-target',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      if (req.method === 'POST') {
+        try { const t = JSON.parse((await readBody(req)).toString('utf8')).target; if (t === 'wsl' || t === 'local') installTarget = t } catch {}
+      }
+      const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? null }))
+    },
+  }), 'wsl-mirror: install target route')
+  const withSpec = (payload, convert) => {
+    const args = payload?.args
+    return typeof args?.spec === 'string' ? { ...payload, args: { ...args, spec: convert(args.spec) } } : payload
+  }
   const ownHost = (req, body) => fetch(`${ws.getOrigin()}${new URL(req.url, 'http://x').pathname}`, {
     method: 'POST', body,
     headers: { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
@@ -116,20 +138,53 @@ export async function apply(ctx, config = {}) {
     try { message = JSON.parse(body.toString('utf8')) } catch {}
     const stripped = stripPrefix(message?.payload)
     const requestId = message?.payload?.args?.requestId ?? message?.payload?.args?.options?.requestId
-    const toWsl = stripped.wsl || (requestId !== undefined && wslInstalls.has(requestId))
-    if (!toWsl) { req[Symbol.asyncIterator] = async function* () { yield body }; return next() }
+    const install = INSTALL_ENDPOINTS.has(endpoint)
+    const toWsl = stripped.wsl || (requestId !== undefined && wslInstalls.has(requestId)) || (install && installTarget === 'wsl')
+    if (!toWsl) {
+      // Installing here: a WSL path typed into the dialog becomes the Windows path of the same directory.
+      const local = install && process.platform === 'win32' ? withSpec(message.payload, (spec) => toWindowsSpec(spec, remoteGraph?.distro)) : undefined
+      const replay = local && local !== message.payload ? Buffer.from(JSON.stringify({ ...message, payload: local })) : body
+      req[Symbol.asyncIterator] = async function* () { yield replay }
+      if (replay !== body) req.headers['content-length'] = String(replay.length)
+      return next()
+    }
+    if (install) stripped.value = withSpec(stripped.value, toWslSpec)
     if (endpoint === 'pluginManager/installBundle' && requestId !== undefined) wslInstalls.add(requestId)
     const answerJson = await forwardApi(pathname, Buffer.from(JSON.stringify({ ...message, payload: stripped.value }))).then((r) => r.json())
     if (answerJson?.result?.ok) answerJson.result.value = prefixResult(answerJson.result.value)
     return json(answerJson)
   }
 
-  ctx.on('connection/request', async (req, res, next) => {
+  const failed = (res, body, error) => {
+    let rpcId = null
+    try { rpcId = JSON.parse(body.toString('utf8')).rpcId } catch {}
+    if (res.headersSent) { res.end(); return }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ type: 'server-response', rpcId, result: { ok: false, error: { code: 'internal', message: `The WSL Host did not answer: ${error.message}` } } }))
+  }
+  const guarded = (handler) => async (req, res, next, ...rest) => {
+    let body = Buffer.alloc(0)
+    const read = req[Symbol.asyncIterator].bind(req)
+    req[Symbol.asyncIterator] = async function* () { for await (const c of read()) { body = Buffer.concat([body, c]); yield c } }
+    try { return await handler(req, res, next, ...rest) } catch (error) { ctx.logger.warn('wsl-mirror: %s', error.message); failed(res, body, error) }
+  }
+
+  ctx.on('connection/request', guarded(async (req, res, next) => {
     const pathname = new URL(req.url ?? '/', 'http://x').pathname
     const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
-    if (!sameVersion || req.headers[INNER] !== undefined) return next()
+    if (req.headers[INNER] !== undefined) return next()
     const endpoint = /^\/api\/([A-Za-z]+\/[A-Za-z]+)$/.exec(pathname)?.[1]
+    if (!sameVersion && installTarget === 'wsl' && INSTALL_ENDPOINTS.has(endpoint)) {
+      // Never fall back to installing on this Host when the person chose WSL.
+      let rpcId = null
+      try { rpcId = JSON.parse((await readBody(req)).toString('utf8')).rpcId } catch {}
+      const message = remoteGraph === undefined ? 'The WSL Host is not connected.' : `The WSL Host runs DSH ${remoteGraph.graph.release?.version}, this one ${raw.release?.version}.`
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ type: 'server-response', rpcId, result: { ok: false, error: { code: 'internal', message: `${message} Switch the install location to Windows in the Add plugin menu, or fix the WSL side first.` } } }))
+      return
+    }
+    if (!sameVersion) return next()
     if (endpoint && PLUGIN_NAMESPACES.has(endpoint.split('/')[0])) return pluginCall(req, res, next, pathname, endpoint)
     if (method === undefined) return next()
     const body = await readBody(req)
@@ -153,7 +208,7 @@ export async function apply(ctx, config = {}) {
     if (SETTINGS_WRITES.has(method) && remoteNamespaces.has(ns)) return answer(res, await callRemoteApi(method, body))
     req[Symbol.asyncIterator] = async function* () { yield body }  // client-connection reads the body with for-await
     return next()
-  })
+  }))
 
   let raw = reg.composed
   let remoteGraph
@@ -221,8 +276,11 @@ export async function apply(ctx, config = {}) {
             reg.notifyGraphChanged()
           }
         }
+        throw new Error('events stream ended')
       } catch (error) {
         if (stopped) return
+        // Disconnected: stop mirroring and forwarding until the WSL Host is back, rather than act on a stale graph.
+        if (remoteGraph !== undefined) { remoteGraph = undefined; recompute(); reg.notifyGraphChanged() }
         writeStatus({ local: raw.release, mirrored: [...state.mirrored.keys()], reason: `connection: ${error.message}` })
         ctx.logger.warn('wsl-mirror: %s', error.message)
         cookieValue = undefined

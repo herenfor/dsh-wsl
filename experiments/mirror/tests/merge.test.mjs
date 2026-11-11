@@ -94,3 +94,22 @@ test('plugins: a prefixed argument sends the call to WSL without the prefix, and
   assert.deepEqual(stripPrefix({ args: { name: 'dsh-x' } }), { value: { args: { name: 'dsh-x' } }, wsl: false })
   assert.deepEqual(prefixResult({ changed: true, target: 'dsh-x', bundle: 'dsh-x', stage: 'enable' }), { changed: true, target: 'wsl:dsh-x', bundle: 'wsl:dsh-x', stage: 'enable' })
 })
+
+test('plugins: a localized title is labelled in every language', () => {
+  const [b] = mergeBundles([], [{ name: 'x', meta: { title: { en: 'Auto review', zh: '自动审查' }, description: { en: 'd' } } }])
+  assert.deepEqual(b.meta, { title: { en: 'Auto review · WSL', zh: '自动审查 · WSL' }, description: { en: 'd' } })
+})
+
+import { toWindowsSpec, toWslSpec } from '../mirror/paths.mjs'
+
+test('local-directory specs are converted between Windows and WSL', () => {
+  assert.equal(toWslSpec('C:\\Users\\S\\dsh-wsl-test\\mirror'), '/mnt/c/Users/S/dsh-wsl-test/mirror')
+  assert.equal(toWslSpec('link:D:/plugins/pet\\'), 'link:/mnt/d/plugins/pet')
+  assert.equal(toWslSpec('\\\\wsl.localhost\\Ubuntu\\home\\s\\dsh-sentinel'), '/home/s/dsh-sentinel')
+  assert.equal(toWslSpec('\\\\wsl$\\Ubuntu-24.04\\home\\s\\x'), '/home/s/x')
+  assert.equal(toWslSpec('dsh-plugin-whale-pet'), 'dsh-plugin-whale-pet')
+  assert.equal(toWslSpec('github:herenfor/dsh-sentinel'), 'github:herenfor/dsh-sentinel')
+  assert.equal(toWindowsSpec('/mnt/c/Users/S/x', 'Ubuntu'), 'C:\\Users\\S\\x')
+  assert.equal(toWindowsSpec('file:/home/s/dsh-sentinel', 'Ubuntu'), 'file:\\\\wsl.localhost\\Ubuntu\\home\\s\\dsh-sentinel')
+  assert.equal(toWindowsSpec('@scope/pkg', 'Ubuntu'), '@scope/pkg')
+})

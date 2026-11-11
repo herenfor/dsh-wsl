@@ -9,22 +9,29 @@ export const PLUGIN_NAMESPACES = new Set(['pluginManager', 'pluginInventory'])
 
 const prefixed = (id) => (typeof id === 'string' ? `${PREFIX}${id}` : id)
 
+// Append the side to the title the page shows: a plain string, or every language of a localized title.
 function labelled(meta, fallback, side) {
   const tag = ` · ${SIDE_LABEL[side]}`
-  if (meta && typeof meta.title === 'string') return { ...meta, title: meta.title + tag }
+  const title = meta?.title
+  if (typeof title === 'string') return { ...meta, title: title + tag }
+  if (title && typeof title === 'object') return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, `${t}${tag}`])) }
   return { ...(meta ?? {}), title: fallback + tag }
 }
 
+// Each WSL bundle is placed right after the Windows bundle of the same name, so the two sides of one plugin sit
+// together; bundles only one side has keep their place.
 export function mergeBundles(local, remote) {
-  return [
-    ...local.map((b) => ({ ...b, meta: labelled(b.meta, b.name, 'local') })),
-    ...remote.map((b) => ({
+  const mine = local.map((b) => ({ ...b, meta: labelled(b.meta, b.name, 'local') }))
+  const theirs = remote.map((b) => ({
       ...b,
       name: prefixed(b.name),
       meta: labelled(b.meta, b.name, 'wsl'),
-      ...(b.rows ? { rows: b.rows.map((r) => ({ ...r, entryId: prefixed(r.entryId) })) } : {}),
-    })),
-  ]
+    ...(b.rows ? { rows: b.rows.map((r) => ({ ...r, entryId: prefixed(r.entryId) })) } : {}),
+  }))
+  const pairs = new Map(theirs.map((b, i) => [remote[i].name, b]))
+  const out = []
+  for (const b of mine) { out.push(b); const twin = pairs.get(b.name); if (twin) { out.push(twin); pairs.delete(b.name) } }
+  return [...out, ...pairs.values()]
 }
 
 export function mergePlugins(local, remote) {

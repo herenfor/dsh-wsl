@@ -4,6 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Experiment: runs in the Desktop-side Host and merges the user plugin rows of a WSL Host's client module graph into its own, serving their bundles from the WSL Host.",
-  "exports": { ".": "./index.mjs" },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "manifestVersion": 1 }
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    },
+    "manifestVersion": 1
+  }
 }

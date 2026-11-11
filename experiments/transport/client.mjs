@@ -9,9 +9,10 @@ import { Mux } from './mux.mjs'
 /**
  * @param options.command - executable, e.g. 'wsl.exe' (or process.execPath in tests)
  * @param options.args - its arguments, ending in '--bridge'
+ * @param options.caps - what this side serves for the WSL side, e.g. ['credentials'] (announced after hello)
  * @returns a Bridge: events 'state' ({ connected, dsh, hello }); request(); agent; close()
  */
-export function startBridge({ command, args, log = () => {} }) {
+export function startBridge({ command, args, caps = [], log = () => {} }) {
   const bridge = new EventEmitter()
   let mux, child, stopped = false, delay = 500
   bridge.state = { connected: false, dsh: { state: 'unknown' }, hello: null }
@@ -21,8 +22,10 @@ export function startBridge({ command, args, log = () => {} }) {
     child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     child.stderr.on('data', (c) => log(`bridge stderr: ${c.toString('utf8').trimEnd()}`))
     mux = new Mux(child.stdout, child.stdin, { side: 'opener' })
+    // Streams the WSL side opens (e.g. {kind:'credentials'}) go to the 'stream' listeners; none → refused.
+    mux.on('stream', (stream, target) => { if (bridge.listenerCount('stream') > 0) bridge.emit('stream', stream, target); else stream.destroy(new Error('not served')) })
     mux.on('control', (m) => {
-      if (m.type === 'hello') { delay = 500; set({ connected: true, hello: m }) }
+      if (m.type === 'hello') { delay = 500; mux.control({ type: 'client', caps }); set({ connected: true, hello: m }) }
       else if (m.type === 'dsh') set({ dsh: { state: m.state, origin: m.origin, token: m.token, exit: m.exit } })
     })
     const down = (why) => {

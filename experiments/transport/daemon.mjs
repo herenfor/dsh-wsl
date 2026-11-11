@@ -28,9 +28,12 @@ function findDsh() {
   for (const c of candidates) if (c && existsSync(c)) return realpathSync(c)
   throw new Error('dsh is not installed in WSL (set DSH_BIN)')
 }
-const childEnv = () => ({ ...process.env, PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
+// The WSL DSH Host always uses the default DSH home (~/.dsh): a DSH_HOME inherited from whoever started the daemon
+// (a test Host, a shell) must not move it elsewhere.
+const childEnv = () => ({ ...withoutDshHome(process.env), DSH_WSL_RUN: RUN, PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
 export const PROTOCOL = 1
 
+function withoutDshHome(env) { const { DSH_HOME, ...rest } = env; return rest }
 const log = (message) => { try { appendFileSync(LOG, `${new Date().toISOString()} ${message}\n`, { mode: 0o600 }) } catch {} }
 const masked = (text) => text.replace(/token=[A-Za-z0-9_-]+/g, 'token=***')
 
@@ -44,6 +47,7 @@ async function serve() {
 
   let dsh = { state: 'starting' }
   const bridges = new Set()
+  const caps = new WeakMap()   // bridge mux → capabilities it announced ({type:'client', caps:[...]})
   const announce = () => { for (const mux of bridges) mux.control({ type: 'dsh', ...publicState() }) }
   const publicState = () => ({ state: dsh.state, origin: dsh.origin, token: dsh.token, version: dsh.version, exit: dsh.exit })
 
@@ -78,19 +82,23 @@ async function serve() {
   startDsh()
 
   const server = createServer((socket) => {
-    // First line: the daemon token. Anything else closes the connection.
+    // First line: the daemon token (a Desktop bridge), or the token and " broker" (the WSL DSH Host asking Desktop for
+    // credentials; see brokerConnection). Anything else closes the connection.
     let head = Buffer.alloc(0)
     const onData = (chunk) => {
       head = Buffer.concat([head, chunk])
       const nl = head.indexOf(10)
       if (nl < 0) { if (head.length > 256) socket.destroy(); return }
       socket.off('data', onData)
-      if (head.subarray(0, nl).toString('utf8') !== token) { log('bridge rejected: bad token'); socket.destroy(); return }
+      const first = head.subarray(0, nl).toString('utf8')
       const rest = head.subarray(nl + 1)
+      if (first === `${token} broker`) { brokerConnection(socket, rest); return }
+      if (first !== token) { log('bridge rejected: bad token'); socket.destroy(); return }
       const mux = new Mux(socket, socket, { side: 'acceptor' })
       bridges.add(mux)
       log(`bridge joined (${bridges.size} open)`)
       mux.on('close', () => { bridges.delete(mux); log(`bridge left (${bridges.size} open)`) })
+      mux.on('control', (m) => { if (m?.type === 'client' && Array.isArray(m.caps)) caps.set(mux, m.caps) })
       mux.on('stream', (stream, target) => {
         if (target?.kind !== 'dsh' || dsh.state !== 'running') { stream.destroy(new Error(`no target ${JSON.stringify(target)} (dsh ${dsh.state})`)); return }
         const port = Number(new URL(dsh.origin).port)
@@ -106,6 +114,37 @@ async function serve() {
     socket.on('data', onData)
     socket.on('error', () => {})
   })
+  // Credential requests from the WSL DSH Host: one JSON object per line, {id, op, ...}; each is passed to the newest
+  // bridge that announced the 'credentials' capability and answered on the same line protocol, {id, ...answer}.
+  function brokerConnection(socket, rest) {
+    let buffer = rest.toString('utf8')
+    const answer = (value) => { if (!socket.destroyed) socket.write(`${JSON.stringify(value)}\n`) }
+    const handle = async (line) => {
+      let request
+      try { request = JSON.parse(line) } catch { return }
+      const desktop = [...bridges].reverse().find((mux) => caps.get(mux)?.includes('credentials'))
+      if (!desktop) { answer({ id: request.id, error: 'Desktop is not connected' }); return }
+      const stream = desktop.open({ kind: 'credentials' })
+      const parts = []
+      const timer = setTimeout(() => stream.destroy(new Error('timeout')), 15_000)
+      stream.on('data', (c) => parts.push(c))
+      stream.once('end', () => {
+        clearTimeout(timer)
+        try { answer({ ...JSON.parse(Buffer.concat(parts).toString('utf8')), id: request.id }) } catch { answer({ id: request.id, error: 'bad answer from Desktop' }) }
+      })
+      stream.once('error', (e) => { clearTimeout(timer); answer({ id: request.id, error: e.message }) })
+      const { id, ...body } = request
+      stream.end(JSON.stringify(body))
+    }
+    const onData = (chunk) => {
+      buffer += chunk.toString('utf8')
+      let nl
+      while ((nl = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, nl); buffer = buffer.slice(nl + 1); void handle(line) }
+    }
+    socket.on('data', onData)
+    if (buffer) onData(Buffer.alloc(0))
+  }
+
   server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`) })
   const stop = () => { log('serve: stopping'); rmSync(SOCKET, { force: true }); process.exit(0) }
   process.on('SIGTERM', stop); process.on('SIGINT', stop)
@@ -125,7 +164,7 @@ async function bridge() {
   if (!(await reachable())) {
     mkdirSync(RUN, { recursive: true, mode: 0o700 })
     const out = openSync(LOG, 'a', 0o600)
-    spawn(process.execPath, [fileURLToPath(import.meta.url), '--serve', '--profile', PROFILE], { detached: true, stdio: ['ignore', out, out], env: process.env }).unref()
+    spawn(process.execPath, [fileURLToPath(import.meta.url), '--serve', '--profile', PROFILE], { detached: true, stdio: ['ignore', out, out], env: withoutDshHome(process.env) }).unref()
     for (let i = 0; i < 100 && !(await reachable()); i++) await new Promise((r) => setTimeout(r, 100))
   }
   const socket = connect(SOCKET)

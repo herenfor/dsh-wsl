@@ -3,6 +3,7 @@
 // `origin[id]` is 'builtin' when the row's bundle ships inside the DSH installation, 'user' otherwise.
 import { realpathSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
+import { BrokerClient, brokerCredentials } from './broker.mjs'
 
 export const name = 'wsl-agent'
 export const inject = ['clientModules', 'webServer']
@@ -59,4 +60,7 @@ export function apply(ctx) {
   }, 'wsl-agent: route changes')
   ctx.effect(() => () => { for (const res of clients) res.destroy(); clients.clear() }, 'wsl-agent: close streams')
   ctx.logger.info('wsl-agent: builtin root %s', root)
+  // Started by the bridge daemon (which sets DSH_WSL_RUN): credentials not set in WSL are asked of Desktop.
+  const runDir = process.env.DSH_WSL_RUN
+  if (runDir) ctx.inject(['credentials'], (c) => brokerCredentials(c.credentials, new BrokerClient(runDir), c.logger))
 }

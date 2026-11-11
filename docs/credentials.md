@@ -1,6 +1,6 @@
 # 凭据：WSL 会话怎么用 Desktop 的 API Key 和账号登录
 
-状态：已决定采用做法 3（凭据代理），放在桥接阶段实现（需要 WSL → Desktop 方向的请求通道）。2026-11-11。
+状态：已决定采用做法 3（凭据代理），已实现，在 WSL 内验证通过（见文末“实现”）。2026-11-11。
 
 ## 要求
 
@@ -47,3 +47,40 @@
 - [Developing in WSL（VS Code 文档）](https://code.visualstudio.com/docs/remote/wsl)
 - [1Password SSH：WSL 集成](https://www.1password.dev/ssh/integrations/wsl)
 - [docker-credential-desktop.exe 在 WSL2 中（Docker 论坛）](https://forums.docker.com/t/docker-credential-desktop-exe-executable-file-not-found-in-path-using-wsl2/100225)
+
+## 实现（2026-11-11）
+
+```
+WSL 端 DSH ──(rpc.sock，"<令牌> broker"，每行一个 JSON)──> 守护进程 ──(桥接上的新流 {kind:'credentials'})──> Desktop 端 mirror ──> Desktop 的 ctx.credentials
+```
+
+- **WSL 端**（`experiments/mirror/agent/broker.mjs`，由 dsh-wsl-agent 加载）：不替换官方的 `credentials-local`，而是包装它的实例方法：
+  - `resolve`、`describe`、`readRecord`、`describeRecord`：先用 WSL 自己的（用户在 WSL 里填的 Key、WSL 的环境变量和 `.env`），没有时问 Desktop。
+  - `listRecords`：两边合并，同名以 WSL 为准。
+  - `modifyRecord`：只有 Desktop 有的记录（账号令牌刷新），读 Desktop 的值，在 WSL 端算出新值，再"比较后替换"写回 Desktop；Desktop 的值在此期间变了就按新值重算，最多 5 次。WSL 端不留副本。
+  - `set`、`unset`、`deleteRecord`：只动 WSL 自己的存储，不会删掉或改写 Desktop 的。
+  - 只有由守护进程启动时才启用（守护进程设置 `DSH_WSL_RUN`，指向运行目录）。用户自己在 WSL 里运行 DSH 时不受影响。
+- **守护进程**（`experiments/transport/daemon.mjs`）：
+  - 连接的第一行是 `<令牌> broker` 时，作为凭据请求处理。
+  - 请求转给最新连接、且声明了 `credentials` 能力的 Desktop 桥接；15 秒没有回答就报错。旧版 Desktop 不声明这个能力，因此不会被问到。
+- **Desktop 端**（mirror `index.mjs`）：
+  - 桥接连上后声明 `caps: ['credentials']`。
+  - 收到 `{kind:'credentials'}` 流时，用本机的 `ctx.credentials` 回答 `resolve`、`describe`、`readRecord`、`describeRecord`、`listRecords`、`swapRecord`。
+  - 来源标为 `desktop-<来源>`，在 WSL 端的设置页里能看出 Key 来自 Desktop。
+- **安全**：
+  - 值只在单次请求中经过桥接，两边都不落盘，也不进 agent 运行命令的环境变量。
+  - 守护进程令牌在 `~/.dsh-wsl/run/<profile>/daemon.token`，目录权限 700、文件 600。能读到它的只有同一 WSL 用户，这和 Claude Code 的 WSL 模式相同。
+- **Desktop 关闭时**：WSL 端只能用它自己的凭据。
+
+验证（A 扮演 Desktop，B 为 `desktop-wsl`）：
+
+| 检查 | 结果 |
+|---|---|
+| A 设置 `DSH_WSL_BROKER_TEST` | B 的 `credentials/describe` 立即显示已配置，来源 `desktop-file`；经代理取到的值与 A 一致 |
+| A 删除该 Key | B 立即变为未配置 |
+| 令牌错误的代理连接 | 直接关闭，没有回答 |
+| 没有声明能力的 Desktop | 回答"Desktop is not connected"，不会卡住 |
+
+单元测试 `tests/broker.test.mjs`（5 个）：WSL 自己的优先、Desktop 断开时退回 WSL 单独的行为、令牌刷新写回 Desktop、和 Desktop 同时刷新时按新值重算、合并列表。
+
+另外修正了一个问题：守护进程启动 WSL 端 DSH 时，不再继承调用方的 `DSH_HOME`。之前由测试 Host 拉起时，它会到临时目录里找 profile，然后启动失败。

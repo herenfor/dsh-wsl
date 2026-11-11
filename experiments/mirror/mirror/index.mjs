@@ -8,6 +8,7 @@ import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import http from 'node:http'
+import { isDeepStrictEqual } from 'node:util'
 import { Readable } from 'node:stream'
 import { startBridge } from './transport/client.mjs'
 import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
@@ -40,8 +41,48 @@ function readBridgeConfig(config) {
 export async function apply(ctx, config = {}) {
   const bridgeConfig = readBridgeConfig(config ?? {})
   if (!bridgeConfig.command) { writeStatus({ reason: 'no bridge configured' }); ctx.logger.warn('wsl-mirror: no bridge; set command and args in config or %s', BRIDGE_FILE); return }
-  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
+  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], caps: ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
   ctx.effect(() => () => bridge.close(), 'wsl-mirror: bridge')
+
+  // Credential broker, Desktop half (docs/credentials.md, option 3): the WSL DSH Host asks for a credential when it
+  // has none of its own, and this Host answers from its own credential service. Values cross the bridge per request
+  // and are kept by neither side. A token refresh on the WSL side is written back as a compare-and-swap.
+  let credentials
+  ctx.inject(['credentials'], (c) => { credentials = c.credentials; return () => { credentials = undefined } })
+  const CREDENTIAL_OPS = {
+    resolve: async ({ ref }) => { const r = await credentials.resolve(ref); return r ? { value: r.value, source: `desktop-${r.source}` } : null },
+    describe: ({ ref }) => credentials.describe(ref),
+    readRecord: async ({ key }) => (await credentials.readRecord(key)) ?? null,
+    describeRecord: ({ key }) => credentials.describeRecord(key),
+    listRecords: () => credentials.listRecords(),
+    swapRecord: async ({ key, expected, next }) => {
+      let swapped = false
+      const after = await credentials.modifyRecord(key, async (current) => {
+        if (!isDeepStrictEqual(current ?? null, expected ?? null)) return undefined
+        swapped = true
+        return next
+      })
+      return { swapped, record: after ?? null }
+    },
+  }
+  bridge.on('stream', (stream, target) => {
+    if (target?.kind !== 'credentials') { stream.destroy(new Error('not served')); return }
+    const parts = []
+    stream.on('data', (c) => parts.push(c))
+    stream.once('error', () => {})
+    stream.once('end', async () => {
+      let out
+      try {
+        const request = JSON.parse(Buffer.concat(parts).toString('utf8'))
+        const op = Object.hasOwn(CREDENTIAL_OPS, request.op) ? CREDENTIAL_OPS[request.op] : undefined
+        if (!op) throw new Error(`unknown op ${request.op}`)
+        if (!credentials) throw new Error('Desktop has no credential service')
+        if ((request.ref !== undefined && typeof request.ref !== 'string') || (request.key !== undefined && typeof request.key !== 'string')) throw new Error('bad request')
+        out = { value: await op(request) }
+      } catch (error) { out = { error: error.message } }
+      stream.end(JSON.stringify(out))
+    })
+  })
   let lastToken
   let cookieValue
   bridge.on('state', (s) => { if (s.dsh.token !== lastToken) { lastToken = s.dsh.token; cookieValue = undefined } })

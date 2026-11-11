@@ -455,7 +455,7 @@ export async function apply(ctx, config = {}) {
       ctx.logger.warn('wsl-mirror: settings sync failed: %s', error.message)
     } finally {
       syncing = false
-      writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], routes: [...forwarded.keys()], settingsSync: lastSync })
+      writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], dropped: [...(state.dropped ?? [])], routes: [...forwarded.keys()], settingsSync: lastSync })
     }
   }
   ctx.effect(() => { const t = setInterval(() => void syncSettings('periodic'), 60_000); t.unref(); return () => clearInterval(t) }, 'wsl-mirror: periodic settings sync')
@@ -512,7 +512,7 @@ export async function apply(ctx, config = {}) {
   const recompute = () => {
     state = mergeGraphs(raw, remoteGraph, orderByModuleGraph)
     syncRoutes()
-    writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], routes: [...forwarded.keys()], reason: state.reason })
+    writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], dropped: [...(state.dropped ?? [])], routes: [...forwarded.keys()], reason: state.reason })
     ctx.logger.info('wsl-mirror: %d mirrored rows%s', state.mirrored.size, state.reason ? ` (${state.reason})` : `: ${[...state.mirrored.keys()].join(', ')}`)
   }
   const originalFetch = reg.fetchBundle

@@ -116,3 +116,12 @@
 - 对照 rc.1 与 rc.2 源码（tag `dsh-v0.2.2-rc.1` / `dsh-v0.2.2-rc.2`）：Typert 网关、连接服务（`fetchRoutes`、`admit`、`connection/request`）、文件夹控制器、网页服务器都没变；会话控制的协议改动是新增的（空消息“继续生成”、`conversationContinuation` 投影），rc.1 的 WSL 端只是不支持这些新功能；我们用的扩展点名字、`data-row-key`、创造模式和在应用中打开的接口名、凭据接口都还在。
 - 冲突一处，已修：插件列表的 `updatable: boolean` 改成了 `update: 'registry' | 'git'`，插件自动更新原来会一直判为“不能更新”。`selfupdate.mjs` 的 `updateKind` 两种都认。
 - 没有实测 rc.2 Desktop + rc.1 WSL 的组合：rc.2 没有 Linux 可运行的包，测试 Desktop 只能用 rc.1。
+
+## 只装在 WSL 端的插件（2026-11-12，用 ds-bot、dsh-claude-style 验证）
+
+两类问题都是通用的，不针对某个插件：
+
+- **插件自定义的 `/api` 接口**：插件用 `ctx.connection.fetch.register` 加的接口（ds-bot 的 `/api/bot` 和实时推送）原来在 Desktop 页面上是 404。WSL 端 agent 现在上报 WSL Host 的这类路由和方法，Desktop 在本机没有同名路由时整条转发（`wslFetchRoute` → `forwardRequest`）。
+- **插件补丁关掉的官方组件**：插件的 `cordis.patch.yml` 可以写 `{ id: <条目>, disabled: true }` 关掉官方条目（ds-bot 关掉 `ui-settings-general`，好占用设置入口 `settings.trigger`）。补丁只作用在 WSL Host 的组合上，Desktop 页面里官方组件还在，单例位置被占，插件的 `apply` 抛异常、整个插件不启动（页面只报 “1 entry did not activate”）。现在 agent 读出 WSL 上已启用的第三方插件补丁里关掉的条目，用 WSL 加载器把条目 id 换成包名上报，Desktop 合并模块图时把这些官方模块从页面去掉（`mergeGraphs` 的 `dropped`，写进 `mirror-status.json`）。只影响页面模块，Desktop 后台不动；补丁里改官方条目配置（非 disabled）的情况还没处理。
+
+排查方法：生产页面里 cordis 不把插件 `apply` 的异常打到控制台。用 CDP 的 `Page.addScriptToEvaluateOnNewDocument` 在页面脚本前给 `__ModuleLoader__.load` 挂 setter，包住目标模块的 `apply` 打印异常。

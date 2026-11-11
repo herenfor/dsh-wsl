@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mergeGraphs, requestedPackages } from '../mirror/merge.mjs'
+import { disabledByPatches } from '../agent/index.mjs'
 
 const release = { version: '0.2.2-rc.1', commit: 'c59d10a' }
 const row = (id, rev) => ({ id, url: `plugins/??${id}/client.js&rev=${rev}`, rev })
@@ -31,6 +32,21 @@ test('every row is in exactly one batch, and no batch still carries a replaced r
   assert.deepEqual([...seen].sort(), graph.entries.map((r) => r.id).sort())
   assert.ok(!graph.batches.some((b) => b.url === 'plugins/??x&rev=b'))
   assert.deepEqual(graph.batches.find((b) => b.entries[0] === '@deepseek-ai/dsh-client-ui-tool'), { phase: 'application', url: local.entries[2].url, rev: 'a2', entries: ['@deepseek-ai/dsh-client-ui-tool'] })
+})
+
+test('official rows a WSL plugin\'s patch switches off leave the page; their batch is split', () => {
+  const disabled = disabledByPatches(
+    [{ bundle: 'ds-bot', items: [{ insert: [{ id: 'bot', name: 'ds-bot' }] }, { id: 'web', config: {} }, { id: 'ui-tool', disabled: true }, { id: 'nameless', disabled: true }] }],
+    new Map([['ui-tool', '@deepseek-ai/dsh-client-ui-tool'], ['web', '@deepseek-ai/dsh-web']]),
+  )
+  assert.deepEqual(disabled, [{ id: 'ui-tool', name: '@deepseek-ai/dsh-client-ui-tool', by: 'ds-bot' }])
+  const { graph, dropped } = mergeGraphs(local, { ...remote, disabled }, order)
+  assert.deepEqual([...dropped], ['@deepseek-ai/dsh-client-ui-tool'])
+  assert.ok(!graph.entries.some((r) => r.id === '@deepseek-ai/dsh-client-ui-tool'))
+  assert.ok(!graph.batches.some((b) => b.entries.includes('@deepseek-ai/dsh-client-ui-tool')))
+  // a disabled row alone still changes the page, even with no WSL user rows
+  const onlyDisabled = mergeGraphs(local, { graph: { ...remote.graph, entries: [] }, origin: {}, disabled }, order)
+  assert.deepEqual(onlyDisabled.graph.entries.map((r) => r.id), ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat'])
 })
 
 test('a remote of another release is not mirrored', () => {

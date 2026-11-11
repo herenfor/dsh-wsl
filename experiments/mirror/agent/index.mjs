@@ -1,8 +1,10 @@
 // WSL side of the UI mirror experiment. Serves GET /wsl-bridge/events: a server-sent event stream that sends
 // { graph, origin } on connect and after every graph change. `graph` is this Host's client module graph as is;
 // `origin[id]` is 'builtin' when the row's bundle ships inside the DSH installation, 'user' otherwise.
-import { realpathSync } from 'node:fs'
-import { dirname, sep } from 'node:path'
+import { readFileSync, realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
+import { dirname, join, sep } from 'node:path'
 import { BrokerClient, brokerCredentials } from './broker.mjs'
 
 export const name = 'wsl-agent'
@@ -25,14 +27,57 @@ export function routeTable(ws, connection) {
   return { exact: [...(ws.exact?.keys() ?? [])], prefix: [...(ws.prefixes?.keys() ?? [])], upgrade: [...(ws.upgrades?.keys() ?? [])], fetch }
 }
 
-export function snapshot(cm, root, ws, connection) {
+/**
+ * Entries that the bundle patches of third-party plugins switch off: top-level patch items `{ id, disabled: true }`
+ * (no insert). `patches` is [{ bundle, items }] with each bundle's parsed cordis.patch.yml; `names` maps an entry id to
+ * its package name (the client graph row id). Returns [{ id, name, by }] for the ids that have a name.
+ */
+export function disabledByPatches(patches, names) {
+  const out = []
+  for (const { bundle, items } of patches) {
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item === null || typeof item !== 'object' || typeof item.id !== 'string' || item.disabled !== true || 'insert' in item) continue
+      const name = names.get(item.id)
+      if (typeof name === 'string') out.push({ id: item.id, name, by: bundle })
+    }
+  }
+  return out
+}
+
+/**
+ * The parsed cordis.patch.yml of each enabled third-party bundle of a profile: [{ bundle, items }]. Enabled bundles are
+ * the profile manifest's `dsh.profile.bundles`; official ones (@deepseek-ai/) are skipped.
+ */
+export function bundlePatches(profileDir, parseYaml) {
+  let pkg
+  try { pkg = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) } catch { return [] }
+  const out = []
+  for (const bundle of pkg.dsh?.profile?.bundles ?? []) {
+    if (typeof bundle !== 'string' || bundle.startsWith('@deepseek-ai/')) continue
+    try {
+      const dir = join(profileDir, 'node_modules', bundle)
+      const patch = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dsh?.bundle?.patch
+      if (typeof patch === 'string') out.push({ bundle, items: parseYaml(readFileSync(join(dir, patch), 'utf8')) })
+    } catch {}
+  }
+  return out
+}
+
+/** This Host's profile folder: <DSH home>/profiles/<--profile>. */
+function profileDir() {
+  const i = process.argv.indexOf('--profile')
+  const profile = i >= 0 ? process.argv[i + 1] : undefined
+  return profile ? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles', profile) : undefined
+}
+
+export function snapshot(cm, root, ws, connection, disabled) {
   const graph = cm.graph()
   const origin = {}
   for (const row of graph.entries) {
     const path = cm.clientPath(row.id)
     origin[row.id] = path !== undefined && real(path).startsWith(root + sep) ? 'builtin' : 'user'
   }
-  return { graph, origin, routes: ws ? routeTable(ws, connection) : undefined, distro: process.env.WSL_DISTRO_NAME }
+  return { graph, origin, routes: ws ? routeTable(ws, connection) : undefined, disabled, distro: process.env.WSL_DISTRO_NAME }
 }
 
 export function apply(ctx) {
@@ -40,7 +85,17 @@ export function apply(ctx) {
   const root = builtinRoot(cm.clientPath(MODULES_ID))
   const clients = new Set()
   const connection = () => { try { return ctx.get('connection') } catch { return undefined } }
-  const frame = () => `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection()))}\n\n`
+  // Official entries that WSL plugins' bundle patches switch off: Desktop drops their client rows from the page too.
+  let parseYaml
+  try { parseYaml = createRequire(join(root, 'wsl-agent.js'))('yaml').parse } catch (error) { ctx.logger.warn('wsl-agent: no YAML parser: %s', error.message) }
+  const disabled = () => {
+    const dir = profileDir()
+    if (!dir || !parseYaml) return []
+    const names = new Map()
+    try { for (const entry of ctx.get('loader').entries()) if (typeof entry.options?.id === 'string' && typeof entry.options?.name === 'string') names.set(entry.options.id, entry.options.name) } catch {}
+    return disabledByPatches(bundlePatches(dir, parseYaml), names)
+  }
+  const frame = () => `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection(), disabled()))}\n\n`
   const push = () => { const f = frame(); for (const res of clients) res.write(f) }
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',

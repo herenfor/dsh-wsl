@@ -69,7 +69,13 @@ function ensureProfile(dsh) {
   if (!existsSync(join(dir, 'package.json'))) step(`create ${PROFILE} from the web template`, [PROFILE, '--from-default-profile', 'web', '--dump-config'])
   let pkg = {}
   try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch {}
-  if (!pkg.dependencies?.['dsh-wsl-agent'] && existsSync(join(AGENT_DIR, 'package.json'))) step('add dsh-wsl-agent', ['plugin', '--profile', PROFILE, 'add', `link:${realpathSync(AGENT_DIR)}`])
+  // The WSL half travels with the Desktop plugin (~/.dsh-wsl/bridge/agent): point the profile at that copy, so it is
+  // updated together with the plugin. A daemon run from elsewhere (a development checkout) has no ../agent and leaves
+  // the profile as it is.
+  if (existsSync(join(AGENT_DIR, 'package.json'))) {
+    const spec = `link:${realpathSync(AGENT_DIR)}`
+    if (pkg.dependencies?.['dsh-wsl-agent'] !== spec) step(`point dsh-wsl-agent at ${AGENT_DIR}`, ['plugin', '--profile', PROFILE, 'add', spec])
+  }
 }
 const log = (message) => { try { appendFileSync(LOG, `${new Date().toISOString()} ${message}\n`, { mode: 0o600 }) } catch {} }
 const masked = (text) => text.replace(/token=[A-Za-z0-9_-]+/g, 'token=***')
@@ -124,8 +130,6 @@ async function serve() {
       setTimeout(startDsh, delay).unref?.()
     })
   }
-  startDsh()
-
   const server = createServer((socket) => {
     // First line: the daemon token (a Desktop bridge), or the token and " broker" (the WSL DSH Host asking Desktop for
     // credentials; see brokerConnection). Anything else closes the connection.
@@ -191,7 +195,8 @@ async function serve() {
   }
 
   server.once('error', (error) => { log(`serve: cannot listen on ${SOCKET}: ${error.message}`); current?.kill('SIGTERM'); process.exit(1) })
-  server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`) })
+  // DSH starts only once the socket is ours: a daemon that cannot listen leaves nothing running behind it.
+  server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`); startDsh() })
   const stop = () => {
     log('serve: stopping'); stopping = true; rmSync(SOCKET, { force: true })
     if (!current || current.exitCode !== null) process.exit(0)

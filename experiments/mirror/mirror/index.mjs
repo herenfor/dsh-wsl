@@ -41,7 +41,7 @@ function readBridgeConfig(config) {
 export async function apply(ctx, config = {}) {
   const bridgeConfig = readBridgeConfig(config ?? {})
   if (!bridgeConfig.command) { writeStatus({ reason: 'no bridge configured' }); ctx.logger.warn('wsl-mirror: no bridge; set command and args in config or %s', BRIDGE_FILE); return }
-  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], caps: ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
+  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], caps: process.env.DSH_WSL_NO_BROKER ? [] : ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
   ctx.effect(() => () => bridge.close(), 'wsl-mirror: bridge')
 
   // Credential broker, Desktop half (docs/credentials.md, option 3): the WSL DSH Host asks for a credential when it

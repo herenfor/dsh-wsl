@@ -81,43 +81,190 @@ window.__ModuleLoader__.load({
       return React.useSyncExternalStore((cb) => store.subscribe(cb), () => store.getSnapshot())
     }
 
-    // New-task page: where this task runs. WSL folders always run in WSL; a Windows folder runs here unless WSL is
-    // chosen, which applies to new tasks in that folder until switched back.
-    function RunTarget({ ui }) {
+    const ReactDOM = (() => { try { return require('react-dom') } catch { return undefined } })()
+    const api = (path, body) => window.fetch(new URL(path, window.document.baseURI), {
+      method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
+      ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    }).then((r) => r.json())
+    const MUTED = 'var(--dsw-alias-label-secondary, #9a9a9a)'
+    const FAINT = 'var(--dsw-alias-label-tertiary, #777)'
+    const HOVER = 'var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.15))'
+    const LAYER = 'var(--dsw-alias-bg-layer-2, #2a2a2a)'
+    const BORDER = 'var(--dsw-alias-border-l1, rgba(127,127,127,.25))'
+    const SHADOW = 'var(--dsw-elevation-prominent, 0 8px 24px rgba(0,0,0,.35))'
+    const MonitorIcon = () => h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, 'aria-hidden': true },
+      h('rect', { x: 1.5, y: 2.5, width: 13, height: 9, rx: 1.5 }), h('path', { d: 'M5.5 14h5M8 11.5V14' }))
+    const Chevron = () => h('svg', { width: 10, height: 10, viewBox: '0 0 10 10', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, 'aria-hidden': true }, h('path', { d: 'M2.5 4l2.5 2.5L7.5 4' }))
+    const Check = () => h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true }, h('path', { d: 'M3 8.5l3.2 3L13 4.5' }))
+    const hoverable = (base) => ({ onMouseEnter: (e) => { if (!e.currentTarget.disabled) e.currentTarget.style.background = HOVER }, onMouseLeave: (e) => { e.currentTarget.style.background = base ?? 'transparent' } })
+
+    // A container right below the composer of the new-task page, for content rendered from the hero options slot.
+    function useBelowComposer(anchor) {
+      const [host, setHost] = React.useState(null)
+      React.useLayoutEffect(() => {
+        // The hero options sit in the row above the input; the first ancestor that also holds the input is the column.
+        const seat = anchor.current?.closest('[data-composer-seat]')
+        if (!seat) return undefined
+        let column = anchor.current.parentElement
+        while (column && column !== seat && !column.querySelector('textarea, [contenteditable="true"]')) column = column.parentElement
+        if (!column) column = seat
+        const div = document.createElement('div')
+        div.dataset.dshWslMirror = 'environment'
+        div.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px 0;font-size:13px;position:relative'
+        column.appendChild(div)
+        setHost(div)
+        return () => { div.remove(); setHost(null) }
+      }, [])
+      return host
+    }
+
+    // New-task page: the environment the task runs in, picked under the composer as in Claude Code's new-session view.
+    // WSL folders always run in WSL; a Windows folder runs here unless WSL is chosen, which the folder then keeps.
+    // Once the task has started the page shows no more of it (the sidebar's penguin tells where a task runs).
+    function Environment({ ui }) {
+      const anchor = React.useRef(null)
+      const host = useBelowComposer(anchor)
       const sessions = useStore(ui.sessions.list)
       const workspaces = useStore(ui.workspaces.list)
       const sessionId = Object.values(sessions.byId).find((s) => (s.retainedBy?.mainView ?? 0) > 0)?.id
-      const workspace = sessionId === undefined ? undefined : workspaces.items.find((w) => w.sessionIds.includes(sessionId))
-      const workspaceId = workspace?.workspaceId
+      const workspaceId = sessionId === undefined ? undefined : workspaces.items.find((w) => w.sessionIds.includes(sessionId))?.workspaceId
       const [state, setState] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const call = (body) => window.fetch(new URL(`wsl-bridge/run-target?workspaceId=${encodeURIComponent(workspaceId)}`, window.document.baseURI), {
-        method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
-        ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
-      }).then((r) => r.json())
-      React.useEffect(() => { if (workspaceId) call().then(setState, () => setState(null)) }, [workspaceId])
-      if (!workspaceId || state === null || state.workspaceId !== workspaceId) return null
+      const [open, setOpen] = React.useState(false)
+      React.useEffect(() => { if (workspaceId) api(`wsl-bridge/run-target?workspaceId=${encodeURIComponent(workspaceId)}`).then(setState, () => setState(null)) }, [workspaceId])
+      React.useEffect(() => {
+        if (!open) return undefined
+        const close = (e) => { if (!host?.contains(e.target)) setOpen(false) }
+        const esc = (e) => { if (e.key === 'Escape') setOpen(false) }
+        document.addEventListener('mousedown', close, true); document.addEventListener('keydown', esc, true)
+        return () => { document.removeEventListener('mousedown', close, true); document.removeEventListener('keydown', esc, true) }
+      }, [open, host])
+      const placeholder = h('span', { ref: anchor, style: { display: 'none' } })
+      if (!ReactDOM?.createPortal || !host || !workspaceId || state === null || state.workspaceId !== workspaceId) return placeholder
       const wsl = state.target === 'wsl'
-      const distro = state.distro ? `（${state.distro}）` : ''
-      const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 999, fontSize: 12, border: `1px solid ${wsl ? COLORS.wsl : 'rgba(127,127,127,.35)'}`, background: 'transparent', color: 'inherit', font: 'inherit', lineHeight: '18px' }
-      if (state.insideWsl) return h('span', { style: chip, title: state.wslPath ?? undefined }, h(PenguinIcon), `在 WSL${distro} 中运行`)
-      const slowDisk = wsl && typeof state.wslPath === 'string' && state.wslPath.startsWith('/mnt/')
-      const toggle = async () => {
+      const distro = state.distro ?? 'WSL'
+      const choose = async (target) => {
+        setOpen(false)
+        if (target === state.target || state.insideWsl) return
         setBusy(true)
         try {
-          setState(await call({ workspaceId, target: wsl ? 'local' : 'wsl' }))
-          // A blank task on the other side replaces this one.
-          await ui.openWorkspace(workspaceId)
+          setState(await api('wsl-bridge/run-target', { workspaceId, target }))
+          await ui.openWorkspace(workspaceId)  // a blank task on the chosen side replaces this one
         } finally { setBusy(false) }
       }
-      return h('span', { style: { display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 } },
+      const item = (target, icon, title, note, disabled) => h('button', {
+        type: 'button', role: 'menuitemradio', 'aria-checked': state.target === target, disabled, onClick: () => choose(target), ...hoverable(),
+        style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', font: 'inherit', textAlign: 'left', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 },
+      }, h('span', { style: { display: 'inline-flex', width: 16, justifyContent: 'center' } }, icon),
+      h('span', { style: { display: 'flex', flexDirection: 'column', flex: 1, gap: 2 } }, h('span', { style: { fontSize: 13 } }, title), h('span', { style: { fontSize: 12, color: FAINT } }, note)),
+      h('span', { style: { width: 14, display: 'inline-flex' } }, state.target === target ? h(Check) : null))
+      const menu = open ? h('div', {
+        role: 'menu',
+        style: { position: 'absolute', top: 'calc(100% + 6px)', left: 8, zIndex: 1100, minWidth: 260, padding: 4, borderRadius: 'var(--dsw-radius-lg, 12px)', background: LAYER, border: `1px solid ${BORDER}`, boxShadow: SHADOW },
+      },
+      item('local', h(MonitorIcon), 'Windows', state.insideWsl ? '这个文件夹在 WSL 中，只能在 WSL 运行' : '在本机运行', state.insideWsl),
+      item('wsl', h(PenguinIcon), distro, state.wslAvailable ? '在 WSL 中运行' : 'WSL 端未连接或版本不同', !state.wslAvailable && !wsl)) : null
+      const slowDisk = wsl && typeof state.wslPath === 'string' && state.wslPath.startsWith('/mnt/')
+      const row = [
         h('button', {
-          type: 'button', disabled: busy || (!wsl && !state.wslAvailable), onClick: toggle,
-          title: !state.wslAvailable && !wsl ? 'WSL 端未连接或版本不同' : `点击改为在 ${wsl ? 'Windows' : 'WSL'} 中运行`,
-          style: { ...chip, cursor: busy ? 'default' : 'pointer' },
-        }, wsl ? h(PenguinIcon) : null, busy ? '切换中…' : `运行位置：${wsl ? `WSL${distro}` : 'Windows'}`),
-        slowDisk ? h('span', { style: { fontSize: 12, color: COLORS.wsl, maxWidth: 420 } },
-          `这个文件夹在 Windows 磁盘上，WSL 通过 ${state.wslPath.split('/').slice(0, 3).join('/')} 访问，读写会明显变慢。经常在 WSL 运行的项目，建议放到 WSL 内（例如 ~/code）。`) : null)
+          key: 'env', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': open, disabled: busy, onClick: () => setOpen((o) => !o), ...hoverable(),
+          title: wsl ? `在 WSL（${distro}）中运行` : '在 Windows 中运行',
+          style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: MUTED, font: 'inherit', fontSize: 13, cursor: busy ? 'default' : 'pointer' },
+        }, wsl ? h(PenguinIcon) : h(MonitorIcon), busy ? '切换中…' : wsl ? distro : 'Windows', h(Chevron)),
+        slowDisk ? h('span', { key: 'slow', style: { fontSize: 12, color: FAINT } }, `文件夹在 Windows 磁盘上（${state.wslPath.split('/').slice(0, 3).join('/')}），WSL 中读写较慢；常在 WSL 运行的项目建议放进 WSL`) : null,
+        menu,
+      ]
+      return h(React.Fragment, null, placeholder, ReactDOM.createPortal(row, host))
+    }
+
+    // Adding a folder: Windows (the system's folder chooser) or WSL (browsed here, listed by the WSL Host). Takes the
+    // directory-flow slots at a lower priority than the native chooser, which it calls for Windows folders.
+    function FolderFlow({ open, busy, onPicked, onCancel, onError, nativePick }) {
+      const [phase, setPhase] = React.useState(null)   // null | 'choose' | 'native' | 'wsl'
+      const [env, setEnv] = React.useState(null)
+      const outcome = React.useRef({ onPicked, onCancel, onError })
+      outcome.current = { onPicked, onCancel, onError }
+      React.useEffect(() => {
+        if (!open) { setPhase(null); return }
+        if (phase !== null) return
+        setPhase('choose')
+        api('wsl-bridge/run-target').then((s) => { setEnv(s); if (!s.wslAvailable) runNative() }, () => runNative())
+      }, [open])
+      const runNative = () => {
+        setPhase('native')
+        nativePick().then((path) => { if (path === null) outcome.current.onCancel(); else outcome.current.onPicked(path) },
+          (reason) => outcome.current.onError(reason instanceof Error ? reason.message : String(reason)))
+      }
+      if (!open || phase === null || phase === 'native' || env === null) return null
+      if (phase === 'wsl') return h(WslBrowser, { distro: env.distro ?? 'Ubuntu', busy, onPick: (path) => outcome.current.onPicked(path), onCancel: () => outcome.current.onCancel() })
+      const option = (icon, title, note, onClick) => h('button', {
+        type: 'button', onClick, ...hoverable(),
+        style: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 14px', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', font: 'inherit', textAlign: 'left', cursor: 'pointer' },
+      }, h('span', { style: { display: 'inline-flex', width: 18, justifyContent: 'center' } }, icon),
+      h('span', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, h('span', { style: { fontSize: 14 } }, title), h('span', { style: { fontSize: 12, color: FAINT } }, note)))
+      return h(Modal, { title: '添加文件夹', onClose: () => outcome.current.onCancel(), width: 380 },
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+          option(h(MonitorIcon), 'Windows 文件夹', '用系统的文件夹选择框', runNative),
+          option(h(PenguinIcon), `WSL 文件夹（${env.distro ?? 'Ubuntu'}）`, '浏览 Linux 文件系统；任务在 WSL 中运行，读写更快', () => setPhase('wsl'))))
+    }
+
+    function Modal({ title, onClose, width, children, footer }) {
+      React.useEffect(() => {
+        const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
+        document.addEventListener('keydown', esc, true)
+        return () => document.removeEventListener('keydown', esc, true)
+      }, [onClose])
+      const box = h('div', { role: 'presentation', onMouseDown: (e) => { if (e.target === e.currentTarget) onClose() }, style: { position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--dsw-alias-bg-mask-1, rgba(0,0,0,.45))' } },
+        h('div', { role: 'dialog', 'aria-modal': true, 'aria-label': title, style: { width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 'var(--dsw-radius-lg, 12px)', background: LAYER, border: `1px solid ${BORDER}`, boxShadow: SHADOW, color: 'var(--dsw-alias-label-primary, inherit)', fontSize: 14 } },
+          h('div', { style: { fontSize: 16, fontWeight: 600 } }, title), children, footer ?? null))
+      return ReactDOM?.createPortal ? ReactDOM.createPortal(box, document.body) : box
+    }
+
+    // Folder browser over the WSL Host's file system (/wsl-bridge/dirs). The chosen folder is handed on as
+    // \\wsl.localhost\<distro>\..., which the Host routes to WSL.
+    function WslBrowser({ distro, busy, onPick, onCancel }) {
+      const [listing, setListing] = React.useState(null)
+      const [error, setError] = React.useState(null)
+      const [hidden, setHidden] = React.useState(false)
+      const [naming, setNaming] = React.useState(null)
+      const go = (path) => api(`wsl-bridge/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`).then((r) => { if (r.ok) { setListing(r.value); setError(null) } else setError(r.error?.message ?? '无法读取') }, (e) => setError(String(e)))
+      React.useEffect(() => { void go() }, [])
+      const create = async () => {
+        const name = naming?.trim()
+        if (!name) { setNaming(null); return }
+        const r = await api('wsl-bridge/dirs', { path: listing.path, name })
+        if (!r.ok) { setError(r.error?.message ?? '新建失败'); return }
+        setNaming(null); await go(r.value)
+      }
+      const unc = (path) => `\\\\wsl.localhost\\${distro}${path.replace(/\//g, '\\')}`
+      const button = (label, onClick, primary, disabled) => h('button', {
+        type: 'button', onClick, disabled, ...hoverable(primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : undefined),
+        style: { padding: '6px 14px', borderRadius: 'var(--dsw-radius-md, 8px)', border: primary ? 0 : `1px solid ${BORDER}`, background: primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : 'transparent', color: primary ? '#fff' : 'inherit', font: 'inherit', fontSize: 13, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 },
+      }, label)
+      const entries = (listing?.entries ?? []).filter((e) => hidden || !e.hidden)
+      return h(Modal, {
+        title: `选择 WSL 文件夹（${distro}）`, onClose: onCancel, width: 560,
+        footer: h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: FAINT, marginRight: 'auto' } }, h('input', { type: 'checkbox', checked: hidden, onChange: (e) => setHidden(e.target.checked) }), '显示隐藏文件夹'),
+          button('新建文件夹', () => setNaming(''), false, !listing),
+          button('取消', onCancel),
+          button(busy ? '添加中…' : '选择此文件夹', () => listing && onPick(unc(listing.path)), true, !listing || busy)),
+      },
+      h('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, fontSize: 13, color: MUTED } },
+        ...(listing?.crumbs ?? []).flatMap((c, i) => [i > 1 ? h('span', { key: `s${i}`, style: { color: FAINT } }, '/') : null, h('button', { key: c.path, type: 'button', onClick: () => go(c.path), ...hoverable(), style: { border: 0, background: 'transparent', color: 'inherit', font: 'inherit', padding: '2px 4px', borderRadius: 6, cursor: 'pointer' } }, c.name)]),
+        listing && listing.path !== listing.home ? h('button', { type: 'button', onClick: () => go(listing.home), ...hoverable(), style: { marginLeft: 'auto', border: 0, background: 'transparent', color: FAINT, font: 'inherit', fontSize: 12, padding: '2px 6px', borderRadius: 6, cursor: 'pointer' } }, '回到主目录') : null),
+      naming !== null ? h('div', { style: { display: 'flex', gap: 8 } },
+        h('input', { autoFocus: true, value: naming, placeholder: '文件夹名称', onChange: (e) => setNaming(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') { e.stopPropagation(); setNaming(null) } },
+          style: { flex: 1, padding: '6px 10px', borderRadius: 'var(--dsw-radius-md, 8px)', border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } }),
+        button('创建', create, true)) : null,
+      error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error-primary, #e5484d)' } }, error) : null,
+      h('div', { style: { height: 320, overflowY: 'auto', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-md, 8px)', padding: 4 } },
+        listing === null ? h('div', { style: { padding: 12, color: FAINT, fontSize: 13 } }, '加载中…')
+          : entries.length === 0 ? h('div', { style: { padding: 12, color: FAINT, fontSize: 13 } }, '没有子文件夹')
+            : entries.map((e) => h('button', {
+              key: e.path, type: 'button', onClick: () => go(e.path), ...hoverable(),
+              style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 8px', border: 0, borderRadius: 6, background: 'transparent', color: e.hidden ? FAINT : 'inherit', font: 'inherit', fontSize: 13, textAlign: 'left', cursor: 'pointer' },
+            }, h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.2, 'aria-hidden': true }, h('path', { d: 'M1.5 4.5v8h13v-7h-6.5l-1.5-1.5h-5z' })), e.name))))
     }
 
     return {
@@ -132,8 +279,16 @@ window.__ModuleLoader__.load({
           return () => style.remove()
         }, 'wsl-mirror: WSL marks in the sidebar')
         ctx.inject(['uiWorkspace', 'slots'], (c) => {
-          const Hero = () => h(RunTarget, { ui: c.uiWorkspace })
-          c.effect(() => c.slots.inject('conversation.hero.options', () => c.slots.register({ name: 'conversation.hero.options', id: 'wsl-run-target' }, Hero)), 'wsl-mirror: run location on the new-task page')
+          const Hero = () => h(Environment, { ui: c.uiWorkspace })
+          c.effect(() => c.slots.inject('conversation.hero.options', () => c.slots.register({ name: 'conversation.hero.options', id: 'wsl-run-target' }, Hero)), 'wsl-mirror: environment under the composer')
+          // Shadows the native chooser (lower priority renders) and calls it for Windows folders.
+          const desktop = globalThis.__DSH_DIRECTORY_PICKER__
+          const nativePick = desktop === undefined ? () => c.uiWorkspace.pickDirectory() : () => desktop.pick()
+          const injected = () => ({ nativePick })
+          c.effect(() => c.slots.inject('conversation.hero.workspace.directoryFlow', () => c.slots.inject('sidebar.workspaces.directoryFlow', function* () {
+            yield c.slots.register({ name: 'conversation.hero.workspace.directoryFlow', priority: -1, inject: injected }, FolderFlow)
+            yield c.slots.register({ name: 'sidebar.workspaces.directoryFlow', priority: -1, inject: injected }, FolderFlow)
+          })), 'wsl-mirror: Windows or WSL folder when adding one')
         })
         ctx.effect(() => ctx.slots.inject('plugins.add.actions', () => ctx.slots.register({ name: 'plugins.add.actions', id: 'wsl-install-target' }, InstallTarget)), 'wsl-mirror: install target item')
         ctx.effect(() => ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({ name: 'plugins.detail.actions', id: 'wsl-bundle-switch' }, WslSwitch)), 'wsl-mirror: WSL switch on detail pages')

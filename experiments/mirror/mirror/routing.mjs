@@ -130,7 +130,27 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       if (result.ok) result.value = { ...translate(result.value, true), workspace: { ...translate(result.value.workspace, true), path: args.request.path } }
       return reply(res, message.rpcId, result)
     }
-    if (endpoint === 'session/create') return create(req, res, next, message, args, local)
+    if (endpoint === 'agentPresets/list') {
+      const { mine, theirs } = await presets(req)
+      if (!mine?.ok) return reply(res, message.rpcId, mine ?? failure('internal', 'no preset list'))
+      return reply(res, message.rpcId, { ok: true, value: { ...mine.value, presets: mergePresets(mine.value.presets, theirs) } })
+    }
+    if (endpoint === 'agentPresets/read') {
+      const mine = await ownHost(req, pathname, body)
+      if (mine?.result?.ok || mine?.result?.error?.code !== 'agent-preset/not-found') return reply(res, message.rpcId, mine?.result)
+      return reply(res, message.rpcId, await rpc(endpoint, args))
+    }
+    if (endpoint === 'agentPresets/select' && !isWsl(args.agentId)) {
+      const refusal = await wslOnlyPreset(req, args.agentPreset)
+      if (refusal) return reply(res, message.rpcId, refusal)
+    }
+    if (endpoint === 'session/create') {
+      const request = args.request ?? {}
+      const runsHere = !isWsl(request.workspaceId) && !paths().insideWsl(request.cwd) && (runTargets.get(request.workspaceId) ?? 'local') === 'local'
+      const refusal = runsHere ? await wslOnlyPreset(req, request.agentPreset) : undefined
+      if (refusal) return reply(res, message.rpcId, refusal)
+      return create(req, res, next, message, args, local)
+    }
     if (endpoint === 'workspace/insertSessionBefore' && isWsl(args.request?.sessionId) && !isWsl(args.request?.workspaceId)) {
       // Reordering a WSL Session inside a Windows folder: the order lives in the folder's twin on the WSL Host.
       const twin = twins.get(args.request.workspaceId)
@@ -142,6 +162,22 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     try { route = routeOf(args, endpoint) } catch (error) { return reply(res, message.rpcId, failure(error.code, error.message)) }
     if (route === 'local') return local()
     return forward(res, pathname, message, payload)
+  }
+
+  // Agent presets (modes): plugins usually live in WSL, so the mode list shows both Hosts'. A mode only the WSL Host has
+  // is marked, and choosing it for a task that runs here says to switch the run location.
+  const presetCall = (req, endpoint) => ownHost(req, `/api/${endpoint}`, Buffer.from(JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: endpoint, payload: { args: {} } })))
+  async function presets(req) {
+    const [mine, theirs] = await Promise.all([presetCall(req, 'agentPresets/list').then((r) => r?.result), rpc('agentPresets/list', {}).catch(() => undefined)])
+    return { mine, theirs: theirs?.ok ? theirs.value.presets : [] }
+  }
+  async function wslOnlyPreset(req, id) {
+    if (typeof id !== 'string') return undefined
+    const { mine, theirs } = await presets(req)
+    if (!mine?.ok || mine.value.presets.some((p) => p.id === id)) return undefined
+    const row = theirs.find((p) => p.id === id)
+    if (!row) return undefined
+    return failure('agent-preset/not-found', `"${row.name ?? id}" 模式来自 WSL 中的插件，只能用于在 WSL 中运行的任务。请在输入框下方把运行位置切换到 WSL。`)
   }
 
   async function create(req, res, next, message, args, local) {
@@ -208,6 +244,26 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       }))
     },
   }), 'wsl-mirror: run target route')
+
+  // ---- WSL directory browsing for the add-folder dialog: GET ?path= lists, POST {path, name} creates a folder.
+  // Paths are the WSL Host's (/home/...); the page turns the chosen one into \\wsl.localhost\<distro>\...
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact', path: '/wsl-bridge/dirs',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      const send = (result) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result)) }
+      if (!available()) return send(failure('wsl/unavailable', 'WSL 端未连接或版本不同'))
+      try {
+        if (req.method === 'POST') {
+          const body = JSON.parse((await readBody(req)).toString('utf8'))
+          return send(await rpc('directoryPicker/createDirectory', { path: body.path, name: body.name }))
+        }
+        const path = new URL(req.url, 'http://x').searchParams.get('path')
+        return send(await rpc('directoryPicker/list', path ? { path } : {}))
+      } catch (error) { return send(failure('wsl/unavailable', error.message)) }
+    },
+  }), 'wsl-mirror: WSL directory browsing route')
 
   // ---- streams
   const gateway = ctx.typertGateway
@@ -327,6 +383,12 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
   }
 
   return { call }
+}
+
+/** Both Hosts' modes: this Host's as they are, then the WSL Host's that this one lacks, marked. */
+export function mergePresets(mine, theirs) {
+  const have = new Set(mine.map((p) => p.id))
+  return [...mine, ...theirs.filter((p) => !have.has(p.id)).map((p) => ({ ...p, isDefault: false, name: `${p.name ?? p.id} · WSL` }))]
 }
 
 class Queue {

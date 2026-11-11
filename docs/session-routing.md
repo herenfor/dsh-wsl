@@ -14,12 +14,23 @@
   - 两边的文件夹和任务都正常列出。
   - Windows 文件夹里可以同时有 Windows 任务和 WSL 任务（后者带企鹅）。
   - WSL 文件夹单独一行，带企鹅。
-- 新建任务页（官方插槽 `conversation.hero.options`）：
-  - Windows 文件夹显示"运行位置：Windows"，点击切换到"运行位置：WSL（Ubuntu）"。切换后，当前的空白任务换成另一边新建的空白任务。
-  - 这个选择按文件夹记住，之后在该文件夹新建任务都用它，直到切回。保存在 Desktop 端的 `~/.dsh-wsl/run-targets.json`。
-  - 选 WSL 且文件夹在 Windows 磁盘上（WSL 路径以 `/mnt/` 开头）时，下面用橙色字提示读写会明显变慢，建议把项目放到 WSL 内，例如 `~/code`。
-  - WSL 文件夹显示"在 WSL（Ubuntu）中运行"，不能切换。
-- WSL 端未连接或版本不同时，开关不能切到 WSL；已在 WSL 中的文件夹和任务继续显示上次看到的内容。
+- 新建任务页（参照 Claude Code 的新建对话界面，2026-11-11 按用户反馈调整）：
+  - 输入框正下方左侧有一个灰色的环境选择器，显示"Windows ⌄"或"🐧 Ubuntu ⌄"。点开是下拉菜单，可以勾选"Windows：在本机运行"或"Ubuntu：在 WSL 中运行"。
+    - 内容从官方插槽 `conversation.hero.options` 挂入，用 React portal 渲染到输入框所在那一列的末尾。
+    - 只在新建任务页出现；任务开始后不再显示，侧栏的企鹅已经标出它在哪运行。
+  - Windows 文件夹的选择按文件夹记住，保存在 Desktop 端的 `~/.dsh-wsl/run-targets.json`；切换后，当前的空白任务换成另一边新建的空白任务。
+  - WSL 文件夹的菜单里，Windows 一项是灰的，注明"这个文件夹在 WSL 中，只能在 WSL 运行"。
+  - 选 WSL 且文件夹在 Windows 磁盘上（WSL 路径以 `/mnt/` 开头）时，选择器右边用灰色小字提示读写较慢，建议把项目放进 WSL。
+  - WSL 端未连接或版本不同时，Ubuntu 一项不能选。
+- 添加文件夹（侧栏和新建任务页两个入口）：先问"Windows 文件夹"还是"WSL 文件夹（Ubuntu）"。
+  - 原因：Desktop 用 Electron 的 `showOpenDialog` 打开系统选择框，没有传起始目录，而用户的系统选择框导航栏里看不到 Linux，只能手动输入 `\\wsl.localhost\...`。
+  - Windows：照常打开系统选择框。
+  - WSL：打开我们自己的目录浏览框。内容由 WSL 端的 `directoryPicker/list` 列出，经 `/wsl-bridge/dirs` 转发；可以逐级浏览、新建文件夹、显示隐藏文件夹。选中后以 `\\wsl.localhost\<发行版>\...` 交给官方流程，再由服务端转给 WSL。
+  - 实现：在两个 `directoryFlow` 单项插槽里用 `priority: -1` 注册，盖住原生选择框（插槽规则是数值最小的显示）；选 Windows 时调用原生选择框原来的 `pick`。
+- 模式（预设）：
+  - 模式列表合并两边。只有 WSL 端有的（例如 dsh-runtime-tuning 的"调优"）显示为"调优 · WSL"。
+  - 在 Windows 运行的任务选这种模式时，返回"「调优」模式来自 WSL 中的插件，只能用于在 WSL 中运行的任务。请在输入框下方把运行位置切换到 WSL。"
+  - 原因：`agentPresets/list` 不带会话 ID，服务端分不出是哪个任务要的，所以只能合并两边。
 
 ## 实现
 
@@ -54,6 +65,17 @@
 | 页面（无头浏览器） | WSL 文件夹和 WSL 任务后面有企鹅；点击"运行位置：Windows"后变为"运行位置：WSL（Ubuntu）"，当前任务换成 B 上新建的空白任务 |
 
 单元测试：`node --test tests/sessions.test.mjs`（7 个）。
+
+## 真实 Desktop 上的验证（2026-11-11，0.2.2-rc.1）
+
+- 用户在 Desktop 中添加了 WSL 文件夹 `dsh-test`，发了"这是一个测试，汇报一下运行的位置"。
+  - agent 在 WSL 中执行了 `pwd; hostname; whoami; uname -srm`，工作目录为 `/home/s/dsh-test`。
+  - 模型调用用的是经凭据代理取到的 Desktop 账号，WSL 端日志有 `[llm-deepseek-account] model listing … loaded 2 model(s)`。
+- 用户的反馈与调整：
+  - 系统选择框里看不到 Linux → 加了"添加文件夹时先选 Windows 或 WSL"和 WSL 目录浏览框；
+  - 右上角橙色框太显眼 → 改为输入框下方的灰色环境选择器；
+  - WSL 插件的"调优"模式不在模式列表里 → 合并两边的模式列表。
+- 以上调整已在 WSL 内用无头浏览器验证：浏览框能选中 WSL 目录并建好文件夹；环境选择器和输入框左对齐，能来回切换；模式列表里有"调优 · WSL"；Windows 任务选它时出现上面的提示。
 
 ## 还没做
 

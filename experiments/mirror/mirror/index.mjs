@@ -5,7 +5,7 @@
 // only in WSL) are registered here too and forwarded, after this Host's own login and origin check.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import http from 'node:http'
 import { isDeepStrictEqual } from 'node:util'
@@ -17,6 +17,7 @@ import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncO
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
+import { check as checkWsl } from './setup.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
@@ -24,24 +25,43 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const EVENTS = '/wsl-bridge/events'
 const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-length']
 
-// How to reach the WSL side: a bridge command speaking the transport protocol (see ../../transport). Taken from the
-// entry config, else ~/.dsh-wsl/bridge.json: { "command": "wsl.exe", "args": ["-d", "Ubuntu", "--exec", "<node>",
-// "<daemon.mjs>", "--bridge", "--profile", "desktop-wsl"] }. The WSL Host's address and launch token arrive over the
-// bridge and stay in memory.
+// How to reach the WSL side: normally found by setup.mjs (the distribution, its Node and DSH; the bridge files are
+// copied into it). A bridge command given in the entry config or ~/.dsh-wsl/bridge.json overrides that (development):
+// { "command": "wsl.exe", "args": ["-d", "Ubuntu", "--exec", "<node>", "<daemon.mjs>", "--bridge", "--profile",
+// "desktop-wsl"] }. DSH_WSL_COMMAND names another wsl.exe (tests) and ignores bridge.json. The WSL Host's address and
+// launch token arrive over the bridge and stay in memory.
 export const BRIDGE_FILE = join(homedir(), '.dsh-wsl', 'bridge.json')
 export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
+export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro } chosen by the person
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 function writeStatus(status) {
   try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
 }
 function readBridgeConfig(config) {
   if (config.command) return config
+  if (process.env.DSH_WSL_COMMAND) return {}
   try { return JSON.parse(readFileSync(BRIDGE_FILE, 'utf8')) } catch { return {} }
 }
+const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return {} } }
 
 export async function apply(ctx, config = {}) {
   const bridgeConfig = readBridgeConfig(config ?? {})
-  if (!bridgeConfig.command) { writeStatus({ reason: 'no bridge configured' }); ctx.logger.warn('wsl-mirror: no bridge; set command and args in config or %s', BRIDGE_FILE); return }
-  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], caps: process.env.DSH_WSL_NO_BROKER ? [] : ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
+  // First-run setup (setup.mjs): the state of the WSL side, asked again before every connect and on "re-check".
+  let setup = { state: 'checking' }
+  let checking
+  async function resolveBridge() {
+    if (bridgeConfig.command) { setup = { state: 'ready', dev: true }; return { command: bridgeConfig.command, args: bridgeConfig.args ?? [] } }
+    checking ??= checkWsl({
+      wsl: process.env.DSH_WSL_COMMAND ?? 'wsl.exe',
+      desktopVersion: ctx.clientModules.composed?.release?.version,
+      chosen: readJson(CONFIG_FILE).distro,
+      pluginDir: PLUGIN_DIR,
+    }).then((status) => { setup = status; return status }, (error) => { setup = { state: 'error', error: error.message }; return setup }).finally(() => { checking = undefined })
+    const status = await checking
+    if (status.state !== 'ready') ctx.logger.info('wsl-mirror: WSL side not ready: %s%s', status.state, status.distro ? ` (${status.distro})` : '')
+    return status.bridge ?? null
+  }
+  const bridge = startBridge({ resolve: resolveBridge, caps: process.env.DSH_WSL_NO_BROKER ? [] : ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
   ctx.effect(() => () => bridge.close(), 'wsl-mirror: bridge')
 
   // Credential broker, Desktop half (docs/credentials.md, option 3): the WSL DSH Host asks for a credential when it
@@ -184,7 +204,7 @@ export async function apply(ctx, config = {}) {
       }
       const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? null }))
+      res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? setup.distro ?? null, setup: publicSetup().state }))
     },
   }), 'wsl-mirror: install target route')
   // The WSL side of one official bundle, for the switch on its detail page: GET ?name= reads it, POST {name, enabled}
@@ -271,8 +291,47 @@ export async function apply(ctx, config = {}) {
   const routing = installSessionRouting(ctx, {
     bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody,
     available: () => remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release),
-    distro: () => remoteGraph?.distro,
+    distro: () => remoteGraph?.distro ?? setup.distro,
+    setupState: () => publicSetup().state,
   })
+
+  // ---- first-run setup: GET answers where the WSL side stands; POST {action:'recheck'} checks again and connects,
+  // POST {distro} switches the distribution. The page shows this in the environment menu and the setup dialog.
+  const publicSetup = () => {
+    const s = setup
+    let state = s.state
+    const dsh = bridge.state.dsh
+    const failed = !bridge.state.connected && bridge.state.lastError
+    if (state === 'ready') state = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release) ? 'connected' : dsh.state === 'stopped' || failed ? 'error' : 'starting'
+    return {
+      state, distro: s.distro ?? remoteGraph?.distro ?? null, distros: (s.distros ?? []).map((d) => d.name), dev: !!s.dev,
+      desktopVersion: raw.release?.version ?? null, installed: s.installed ?? null, wslVersion: remoteGraph?.graph.release?.version ?? null,
+      commands: s.commands ?? '', prompt: s.prompt ?? '', probeError: s.probeError ?? null,
+      error: s.error ?? (dsh.state === 'stopped' ? dsh.exit?.error ?? `DSH exited (${dsh.exit?.code ?? dsh.exit?.signal ?? '?'})` : failed ? bridge.state.lastError : null),
+      log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
+    }
+  }
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/setup',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      if (req.method === 'POST') {
+        let body = {}
+        try { body = JSON.parse((await readBody(req)).toString('utf8')) } catch {}
+        if (typeof body.distro === 'string' && body.distro !== readJson(CONFIG_FILE).distro) {
+          try { mkdirSync(dirname(CONFIG_FILE), { recursive: true }); writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...readJson(CONFIG_FILE), distro: body.distro }, null, 2)}\n`) } catch {}
+          await resolveBridge(); bridge.restart()
+        } else if (body.action === 'recheck') {
+          if (!bridge.state.connected) { await resolveBridge(); bridge.retry() }
+        }
+        // Give a fresh connection a moment, so the answer already says whether it came up.
+        for (let i = 0; i < 40 && setup.state === 'ready' && publicSetup().state === 'starting'; i++) await new Promise((r) => setTimeout(r, 250))
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(publicSetup()))
+    },
+  }), 'wsl-mirror: setup route')
 
   // Desktop → WSL settings sync for the namespaces both Hosts have (see settings.mjs): on connecting, after this Host
   // writes settings, and once a minute.

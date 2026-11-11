@@ -131,7 +131,9 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
       const [open, setOpen] = React.useState(false)
-      React.useEffect(() => { if (workspaceId) api(`wsl-bridge/run-target?workspaceId=${encodeURIComponent(workspaceId)}`).then(setState, () => setState(null)) }, [workspaceId])
+      const [setupOpen, setSetupOpen] = React.useState(false)
+      const refresh = () => { if (workspaceId) api(`wsl-bridge/run-target?workspaceId=${encodeURIComponent(workspaceId)}`).then(setState, () => setState(null)) }
+      React.useEffect(refresh, [workspaceId])
       React.useEffect(() => {
         if (!open) return undefined
         const close = (e) => { if (!host?.contains(e.target)) setOpen(false) }
@@ -163,9 +165,11 @@ window.__ModuleLoader__.load({
           await ui.openWorkspace(workspaceId, fill, typeof preset === 'string' && next.presetAvailable ? { agentPreset: preset } : {})
         } finally { setBusy(false) }
       }
-      const item = (target, icon, title, note, disabled) => h('button', {
-        type: 'button', role: 'menuitemradio', 'aria-checked': state.target === target, disabled, onClick: () => choose(target), ...hoverable(),
-        style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', font: 'inherit', textAlign: 'left', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 },
+      // A WSL side that is not set up greys the WSL item; clicking it opens the setup dialog.
+      const item = (target, icon, title, note, disabled, greyed) => h('button', {
+        type: 'button', role: 'menuitemradio', 'aria-checked': state.target === target, disabled,
+        onClick: () => { if (target === 'wsl' && !state.wslAvailable) { setOpen(false); setSetupOpen(true) } else void choose(target) }, ...hoverable(),
+        style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', font: 'inherit', textAlign: 'left', cursor: disabled ? 'default' : 'pointer', opacity: disabled || greyed ? 0.5 : 1 },
       }, h('span', { style: { display: 'inline-flex', width: 16, justifyContent: 'center' } }, icon),
       h('span', { style: { display: 'flex', flexDirection: 'column', flex: 1, gap: 2 } }, h('span', { style: { fontSize: 13 } }, title), h('span', { style: { fontSize: 12, color: FAINT } }, note)),
       h('span', { style: { width: 14, display: 'inline-flex' } }, state.target === target ? h(Check) : null))
@@ -174,7 +178,7 @@ window.__ModuleLoader__.load({
         style: { position: 'absolute', top: 'calc(100% + 6px)', left: 8, zIndex: 1100, minWidth: 260, padding: 4, borderRadius: 'var(--dsw-radius-lg, 12px)', background: LAYER, border: `1px solid ${BORDER}`, boxShadow: SHADOW },
       },
       item('local', h(MonitorIcon), 'Windows', state.insideWsl ? '这个文件夹在 WSL 中，只能在 WSL 运行' : '在本机运行', state.insideWsl),
-      item('wsl', h(PenguinIcon), distro, state.wslAvailable ? '在 WSL 中运行' : 'WSL 端未连接或版本不同', !state.wslAvailable && !wsl)) : null
+      item('wsl', h(PenguinIcon), distro, state.wslAvailable ? '在 WSL 中运行' : `${SETUP_NOTE[state.setup] ?? 'WSL 端未连接'}${SETUP_OPENS.has(state.setup) ? '，点击查看' : ''}`, !state.wslAvailable && !wsl && !SETUP_OPENS.has(state.setup), !state.wslAvailable)) : null
       const slowDisk = wsl && typeof state.wslPath === 'string' && state.wslPath.startsWith('/mnt/')
       const row = [
         h('button', {
@@ -185,12 +189,13 @@ window.__ModuleLoader__.load({
         slowDisk ? h('span', { key: 'slow', style: { fontSize: 12, color: FAINT } }, `文件夹在 Windows 磁盘上（${state.wslPath.split('/').slice(0, 3).join('/')}），WSL 中读写较慢；常在 WSL 运行的项目建议放进 WSL`) : null,
         menu,
       ]
-      return h(React.Fragment, null, placeholder, ReactDOM.createPortal(row, host))
+      const dialog = setupOpen ? h(SetupDialog, { key: 'setup', ui, onClose: () => { setSetupOpen(false); refresh() } }) : null
+      return h(React.Fragment, null, placeholder, ReactDOM.createPortal(row, host), dialog)
     }
 
     // Adding a folder: Windows (the system's folder chooser) or WSL (browsed here, listed by the WSL Host). Takes the
     // directory-flow slots at a lower priority than the native chooser, which it calls for Windows folders.
-    function FolderFlow({ open, busy, onPicked, onCancel, onError, nativePick }) {
+    function FolderFlow({ open, busy, onPicked, onCancel, onError, nativePick, ui }) {
       const [phase, setPhase] = React.useState(null)   // null | 'choose' | 'native' | 'wsl'
       const [env, setEnv] = React.useState(null)
       const outcome = React.useRef({ onPicked, onCancel, onError })
@@ -199,7 +204,7 @@ window.__ModuleLoader__.load({
         if (!open) { setPhase(null); return }
         if (phase !== null) return
         setPhase('choose')
-        api('wsl-bridge/run-target').then((s) => { setEnv(s); if (!s.wslAvailable) runNative() }, () => runNative())
+        api('wsl-bridge/run-target').then((s) => { setEnv(s); if (!s.wslAvailable && !SETUP_OPENS.has(s.setup)) runNative() }, () => runNative())
       }, [open])
       const runNative = () => {
         setPhase('native')
@@ -207,6 +212,7 @@ window.__ModuleLoader__.load({
           (reason) => outcome.current.onError(reason instanceof Error ? reason.message : String(reason)))
       }
       if (!open || phase === null || phase === 'native' || env === null) return null
+      if (phase === 'setup') return h(SetupDialog, { ui, onClose: () => outcome.current.onCancel() })
       if (phase === 'wsl') return h(WslBrowser, { distro: env.distro ?? 'Ubuntu', busy, onPick: (path) => outcome.current.onPicked(path), onCancel: () => outcome.current.onCancel() })
       const option = (icon, title, note, onClick) => h('button', {
         type: 'button', onClick, ...hoverable(),
@@ -216,7 +222,91 @@ window.__ModuleLoader__.load({
       return h(Modal, { title: '添加文件夹', onClose: () => outcome.current.onCancel(), width: 380 },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
           option(h(MonitorIcon), 'Windows 文件夹', '用系统的文件夹选择框', runNative),
-          option(h(PenguinIcon), `WSL 文件夹（${env.distro ?? 'Ubuntu'}）`, '浏览 Linux 文件系统；任务在 WSL 中运行，读写更快', () => setPhase('wsl'))))
+          env.wslAvailable
+            ? option(h(PenguinIcon), `WSL 文件夹（${env.distro ?? 'Ubuntu'}）`, '浏览 Linux 文件系统；任务在 WSL 中运行，读写更快', () => setPhase('wsl'))
+            : option(h(PenguinIcon), `WSL 文件夹${env.distro ? `（${env.distro}）` : ''}`, `${SETUP_NOTE[env.setup] ?? 'WSL 端未连接'}，点击查看`, () => setPhase('setup'))))
+    }
+
+    // ---- first-run setup of the WSL side (/wsl-bridge/setup). Nothing is downloaded by the plugin: the person runs the
+    // commands shown, or hands them to a Windows DSH task, then re-checks.
+    const SETUP_NOTE = {
+      'no-wsl': '这台电脑没有安装 WSL', 'no-distro': 'WSL 里还没有 Linux 发行版', wsl1: '这个发行版是 WSL 1，需要 WSL 2',
+      'needs-node': 'WSL 里还没有装 DSH', 'needs-dsh': 'WSL 里还没有装 DSH', 'version-mismatch': 'WSL 里的 DSH 版本和 Desktop 不同',
+      checking: '正在检查 WSL…', starting: '正在启动 WSL 端…', error: 'WSL 端启动失败', connected: '已连接',
+    }
+    const SETUP_OPENS = new Set(['no-wsl', 'no-distro', 'wsl1', 'needs-node', 'needs-dsh', 'version-mismatch', 'error'])
+    const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+    function CodeBlock({ text }) {
+      const [copied, setCopied] = React.useState(false)
+      return h('div', { style: { position: 'relative' } },
+        h('pre', { style: { margin: 0, padding: '10px 12px', paddingRight: 64, borderRadius: 'var(--dsw-radius-md, 8px)', border: `1px solid ${BORDER}`, background: 'rgba(127,127,127,.08)', fontFamily: MONO, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', userSelect: 'text' } }, text),
+        h('button', {
+          type: 'button', ...hoverable(),
+          onClick: () => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) },
+          style: { position: 'absolute', top: 6, right: 6, padding: '2px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, font: 'inherit', fontSize: 12, cursor: 'pointer' },
+        }, copied ? '已复制' : '复制'))
+    }
+    function SetupDialog({ ui, onClose }) {
+      const [s, setS] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const load = (body) => { setBusy(true); return api('wsl-bridge/setup', body).then(setS, (e) => setS({ state: 'error', error: String(e) })).finally(() => setBusy(false)) }
+      React.useEffect(() => { void load() }, [])
+      const para = (...children) => h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary, inherit)' } }, ...children)
+      const note = (...children) => h('div', { style: { fontSize: 12, lineHeight: 1.6, color: FAINT } }, ...children)
+      const code = (t) => h('code', { style: { fontFamily: MONO, fontSize: 12 } }, t)
+      const button = (label, onClick, primary, disabled) => h('button', {
+        type: 'button', onClick, disabled, ...hoverable(primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : undefined),
+        style: { padding: '6px 14px', borderRadius: 'var(--dsw-radius-md, 8px)', border: primary ? 0 : `1px solid ${BORDER}`, background: primary ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : 'transparent', color: primary ? '#fff' : 'inherit', font: 'inherit', fontSize: 13, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 },
+      }, label)
+      const handToDsh = () => {
+        // A Windows folder, so the task runs here (the WSL side is what it is setting up).
+        const folder = ui?.workspaces.list.getSnapshot().items.find((w) => !isWsl(w.workspaceId))
+        onClose()
+        ui?.startSession(folder?.workspaceId, { prompt: s.prompt, whenDraftExists: 'replace' })
+      }
+      let body = [para('正在检查…')]
+      if (s) {
+        const distro = s.distro ?? 'Ubuntu'
+        if (s.state === 'no-wsl') body = [
+          para('这台电脑还没有安装 WSL。用管理员身份打开 PowerShell，运行：'), h(CodeBlock, { text: 'wsl --install' }),
+          note('安装完成后需要重启电脑。重启后第一次打开 Ubuntu 时，按提示设置 Linux 用户名和密码，然后回到这里点「重新检查」。'),
+        ]
+        else if (s.state === 'no-distro') body = [
+          para('WSL 已安装，但还没有 Linux 发行版。在 PowerShell 里运行：'), h(CodeBlock, { text: 'wsl --install -d Ubuntu' }),
+          note('装好后打开一次 Ubuntu，设置 Linux 用户名和密码，然后回到这里点「重新检查」。'),
+        ]
+        else if (s.state === 'wsl1') body = [
+          para(`发行版 ${distro} 运行在 WSL 1 上，需要 WSL 2。在 PowerShell 里运行：`), h(CodeBlock, { text: `wsl --set-version ${distro} 2` }),
+        ]
+        else if (['needs-node', 'needs-dsh', 'version-mismatch'].includes(s.state)) body = [
+          s.state === 'version-mismatch'
+            ? para(`Desktop 是 DSH ${s.desktopVersion}，WSL 里给这个插件用的是 ${s.installed}。两边版本必须相同，在 WSL 里更新：`)
+            : para(`WSL 端需要一份和 Desktop 同版本的 DSH（${s.desktopVersion}）。在 WSL（${distro}）的终端里运行下面的命令：`),
+          note('打开终端：开始菜单里的 Ubuntu，或者在 PowerShell 里运行 ', code(`wsl -d ${distro}`), '。这些文件都装在 ~/.dsh-wsl 下，不影响你在 WSL 里自己装的 dsh。'),
+          h(CodeBlock, { text: s.commands }),
+          note('DSH 连同依赖要下载约 250 MB，装好后约 900 MB，通常需要几分钟。如果 npm 提示找不到这个版本，说明它还没有发布到 npm，要等发布后再装。'),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+            note('也可以把这件事交给 DSH：新建一个在 Windows 运行的任务，命令已经写在输入框里，检查后发送即可。'),
+            ui && s.prompt ? button('交给 DSH 安装', handToDsh) : null),
+        ]
+        else if (s.state === 'error') body = [
+          para('WSL 端没能启动。'),
+          s.error ? h(CodeBlock, { text: s.error }) : null,
+          s.probeError ? h(CodeBlock, { text: s.probeError }) : null,
+          s.log ? note('详细日志在 WSL 里的 ', code(s.log), '。') : null,
+        ]
+        else if (s.state === 'starting' || s.state === 'checking') body = [para('正在启动 WSL 端…'), note('第一次启动需要建好 WSL 端的配置，可能要半分钟。')]
+        else if (s.state === 'connected') body = [para(`已连接：WSL（${distro}）中的 DSH ${s.wslVersion ?? ''}。现在可以在输入框下方把运行位置切换到 ${distro}。`)]
+        if (s.distros?.length > 1) body.push(h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } }, '发行版',
+          h('select', { value: distro, disabled: busy, onChange: (e) => void load({ distro: e.target.value }), style: { padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } },
+            ...s.distros.map((d) => h('option', { key: d, value: d }, d)))))
+      }
+      return h(Modal, {
+        title: '设置 WSL 运行环境', onClose, width: 560,
+        footer: h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
+          button(busy ? '检查中…' : '重新检查', () => void load({ action: 'recheck' }), false, busy),
+          button(s?.state === 'connected' ? '完成' : '关闭', onClose, s?.state === 'connected')),
+      }, ...body.filter(Boolean))
     }
 
     function Modal({ title, onClose, width, children, footer }) {
@@ -295,7 +385,7 @@ window.__ModuleLoader__.load({
           // Shadows the native chooser (lower priority renders) and calls it for Windows folders.
           const desktop = globalThis.__DSH_DIRECTORY_PICKER__
           const nativePick = desktop === undefined ? () => c.uiWorkspace.pickDirectory() : () => desktop.pick()
-          const injected = () => ({ nativePick })
+          const injected = () => ({ nativePick, ui: c.uiWorkspace })
           c.effect(() => c.slots.inject('conversation.hero.workspace.directoryFlow', () => c.slots.inject('sidebar.workspaces.directoryFlow', function* () {
             yield c.slots.register({ name: 'conversation.hero.workspace.directoryFlow', priority: -1, inject: injected }, FolderFlow)
             yield c.slots.register({ name: 'sidebar.workspaces.directoryFlow', priority: -1, inject: injected }, FolderFlow)

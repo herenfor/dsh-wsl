@@ -13,6 +13,7 @@
 - [docs/panel.md](docs/panel.md)：官方插件页同时管理两边的插件。
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据（调研）。
 - [docs/session-routing.md](docs/session-routing.md)：按会话分流，每个任务在 Windows 或 WSL 中运行，侧栏列出两边。
+- [docs/deployment.md](docs/deployment.md)：首次安装，WSL 端缺什么、怎么补（给命令或交给 DSH，不自动下载）。
 
 ## 实验
 

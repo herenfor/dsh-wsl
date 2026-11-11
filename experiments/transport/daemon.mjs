@@ -1,10 +1,15 @@
 // WSL side of the bridge.
-//   node daemon.mjs --serve  [--profile desktop-wsl]   long-running: runs the DSH Host, accepts bridges on a Unix socket
-//   node daemon.mjs --bridge [--profile desktop-wsl]   started by wsl.exe: joins its stdio to the daemon (starting it if needed)
-// Run directory ~/.dsh-wsl/run/<profile>/ (mode 700): rpc.sock, daemon.token (600), daemon.log.
+//   node daemon.mjs --serve  [options]   long-running: runs the DSH Host, accepts bridges on a Unix socket
+//   node daemon.mjs --bridge [options]   started by wsl.exe: joins its stdio to the daemon (starting it if needed)
+// Options: --profile <name> (desktop-wsl); --dsh <DSH's entry script> (else searched); --stamp <bridge files stamp>;
+// --dsh-home <dir> (else DSH's default ~/.dsh, shared with the person's own WSL DSH; the seam for moving sessions).
+// A bridge whose stamp, DSH or DSH home differs from the running daemon's replaces that daemon (after a plugin or DSH
+// update). Before starting DSH the daemon creates the profile from the web template and adds this plugin's WSL half
+// (../agent) when they are missing; both are local operations.
+// Run directory ~/.dsh-wsl/run/<profile>/ (mode 700): rpc.sock, daemon.token (600), daemon.log, daemon.json.
 // The DSH Host listens on 127.0.0.2, which WSL's localhost forwarding does not expose to Windows; the only way in from
 // Windows is a bridge, and a bridge must present the daemon token the run directory holds.
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, chmodSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { connect, createServer } from 'node:net'
@@ -20,20 +25,52 @@ const RUN = join(homedir(), '.dsh-wsl', 'run', PROFILE)
 const SOCKET = join(RUN, 'rpc.sock')
 const TOKEN_FILE = join(RUN, 'daemon.token')
 const LOG = join(RUN, 'daemon.log')
+const IDENTITY_FILE = join(RUN, 'daemon.json')
+const DSH_OPTION = option('--dsh')
+const STAMP = option('--stamp', '')
+const DSH_HOME_OPTION = option('--dsh-home')
+const AGENT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent')
 const DSH_HOST = '127.0.0.2'
 // wsl.exe --exec starts us without a login shell, so PATH may lack ~/.local/bin: find DSH's entry script ourselves and
 // run it with this same node; its own child processes get node's directory and ~/.local/bin on PATH.
 function findDsh() {
-  const candidates = [process.env.DSH_BIN, join(dirname(process.execPath), 'dsh'), join(homedir(), '.local', 'bin', 'dsh'), '/usr/local/bin/dsh', '/usr/bin/dsh']
+  const candidates = [DSH_OPTION, process.env.DSH_BIN, join(homedir(), '.dsh-wsl', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), join(dirname(process.execPath), 'dsh'), join(homedir(), '.local', 'bin', 'dsh'), '/usr/local/bin/dsh', '/usr/bin/dsh']
   for (const c of candidates) if (c && existsSync(c)) return realpathSync(c)
   throw new Error('dsh is not installed in WSL (set DSH_BIN)')
 }
 // The WSL DSH Host always uses the default DSH home (~/.dsh): a DSH_HOME inherited from whoever started the daemon
 // (a test Host, a shell) must not move it elsewhere.
-const childEnv = () => ({ ...withoutDshHome(process.env), DSH_WSL_RUN: RUN, PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
+const childEnv = () => ({ ...withoutDshHome(process.env), ...(DSH_HOME_OPTION ? { DSH_HOME: DSH_HOME_OPTION } : {}), DSH_WSL_RUN: RUN, PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
 export const PROTOCOL = 1
 
 function withoutDshHome(env) { const { DSH_HOME, ...rest } = env; return rest }
+/** DSH's version, read from the package that holds its entry script. */
+function dshVersion(entry) {
+  for (let dir = dirname(entry); dir !== dirname(dir); dir = dirname(dir)) {
+    try { const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')); if (pkg.name === '@deepseek-ai/dsh') return pkg.version } catch {}
+  }
+  return undefined
+}
+/** What a daemon runs: a bridge started with a different identity replaces it. */
+function identity() {
+  let dsh = null
+  try { dsh = findDsh() } catch {}
+  return { stamp: STAMP, dsh, version: dsh ? dshVersion(dsh) ?? null : null, dshHome: DSH_HOME_OPTION ?? null }
+}
+const sameIdentity = (a, b) => a && b && a.stamp === b.stamp && a.dsh === b.dsh && a.version === b.version && a.dshHome === b.dshHome
+/** Create the profile and add the WSL half of the plugin when missing. Local operations only (a link: dependency). */
+function ensureProfile(dsh) {
+  const home = DSH_HOME_OPTION ?? join(homedir(), '.dsh')
+  const dir = join(home, 'profiles', PROFILE)
+  const step = (what, argv) => {
+    const r = spawnSync(process.execPath, [dsh, ...argv], { env: childEnv(), encoding: 'utf8', timeout: 180_000 })
+    log(`profile: ${what}: exit ${r.status}${r.status === 0 ? '' : ` ${(r.stderr || r.stdout || r.error?.message || '').trim().slice(-400)}`}`)
+  }
+  if (!existsSync(join(dir, 'package.json'))) step(`create ${PROFILE} from the web template`, [PROFILE, '--from-default-profile', 'web', '--dump-config'])
+  let pkg = {}
+  try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch {}
+  if (!pkg.dependencies?.['dsh-wsl-agent'] && existsSync(join(AGENT_DIR, 'package.json'))) step('add dsh-wsl-agent', ['plugin', '--profile', PROFILE, 'add', `link:${realpathSync(AGENT_DIR)}`])
+}
 const log = (message) => { try { appendFileSync(LOG, `${new Date().toISOString()} ${message}\n`, { mode: 0o600 }) } catch {} }
 const masked = (text) => text.replace(/token=[A-Za-z0-9_-]+/g, 'token=***')
 
@@ -44,12 +81,16 @@ async function serve() {
   rmSync(SOCKET, { force: true })
   const token = randomBytes(24).toString('base64url')
   writeFileSync(TOKEN_FILE, token, { mode: 0o600 })
+  writeFileSync(IDENTITY_FILE, JSON.stringify({ pid: process.pid, ...identity() }), { mode: 0o600 })
 
   let dsh = { state: 'starting' }
   const bridges = new Set()
   const caps = new WeakMap()   // bridge mux → capabilities it announced ({type:'client', caps:[...]})
   const announce = () => { for (const mux of bridges) mux.control({ type: 'dsh', ...publicState() }) }
   const publicState = () => ({ state: dsh.state, origin: dsh.origin, token: dsh.token, version: dsh.version, exit: dsh.exit })
+  let profileChecked = false
+  let current        // the running DSH Host process
+  let stopping = false
 
   let restarts = 0
   const startDsh = () => {
@@ -57,7 +98,10 @@ async function serve() {
     announce()
     let child
     try {
-      child = spawn(process.execPath, [findDsh(), '--profile', PROFILE, '--no-open', '--host', DSH_HOST, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv() })
+      const entry = findDsh()
+      if (!profileChecked) { ensureProfile(entry); profileChecked = true }
+      dsh.version = dshVersion(entry)
+      child = current = spawn(process.execPath, [entry, '--profile', PROFILE, '--no-open', '--host', DSH_HOST, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv() })
     } catch (error) {
       dsh = { state: 'stopped', exit: { error: error.message } }; log(`dsh: ${error.message}`); announce()
       setTimeout(startDsh, 30_000).unref?.(); return
@@ -66,7 +110,7 @@ async function serve() {
     const onLine = (chunk) => {
       out += chunk.toString('utf8')
       const m = /dsh web: (http:\/\/[^/\s]+)\/\?token=([A-Za-z0-9_-]+)/.exec(out)
-      if (m && dsh.state === 'starting') { dsh = { state: 'running', origin: m[1], token: m[2], pid: child.pid }; restarts = 0; log(`dsh running at ${m[1]} pid ${child.pid}`); announce() }
+      if (m && dsh.state === 'starting') { dsh = { state: 'running', origin: m[1], token: m[2], pid: child.pid, version: dsh.version }; restarts = 0; log(`dsh running at ${m[1]} pid ${child.pid}`); announce() }
       if (out.length > 65536) out = out.slice(-8192)
     }
     child.stdout.on('data', onLine)
@@ -75,6 +119,7 @@ async function serve() {
       dsh = { state: 'stopped', exit: { code, signal } }
       log(`dsh exited code ${code} signal ${signal}`)
       announce()
+      if (stopping) return
       const delay = Math.min(30_000, 1000 * 2 ** restarts++)
       setTimeout(startDsh, delay).unref?.()
     })
@@ -145,8 +190,14 @@ async function serve() {
     if (buffer) onData(Buffer.alloc(0))
   }
 
+  server.once('error', (error) => { log(`serve: cannot listen on ${SOCKET}: ${error.message}`); current?.kill('SIGTERM'); process.exit(1) })
   server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`) })
-  const stop = () => { log('serve: stopping'); rmSync(SOCKET, { force: true }); process.exit(0) }
+  const stop = () => {
+    log('serve: stopping'); stopping = true; rmSync(SOCKET, { force: true })
+    if (!current || current.exitCode !== null) process.exit(0)
+    current.once('exit', () => process.exit(0)); current.kill('SIGTERM')
+    setTimeout(() => { current.kill('SIGKILL'); process.exit(0) }, 5000).unref()
+  }
   process.on('SIGTERM', stop); process.on('SIGINT', stop)
 }
 
@@ -161,11 +212,31 @@ function reachable() {
 
 // ---- bridge ---------------------------------------------------------------------------------------------------------
 async function bridge() {
+  if (await reachable()) {
+    // A daemon from older bridge files or another DSH: replace it (its DSH Host stops with it).
+    let running
+    try { running = JSON.parse(readFileSync(IDENTITY_FILE, 'utf8')) } catch {}
+    const wanted = identity()
+    if (STAMP && !sameIdentity(running, wanted)) {
+      log(`bridge: replacing daemon ${JSON.stringify(running)} with ${JSON.stringify(wanted)}`)
+      try { process.kill(running.pid, 'SIGTERM') } catch {}
+      const alive = () => { try { process.kill(running.pid, 0); return true } catch { return false } }
+      for (let i = 0; i < 100 && (alive() || (await reachable())); i++) await new Promise((r) => setTimeout(r, 100))
+    }
+  }
   if (!(await reachable())) {
     mkdirSync(RUN, { recursive: true, mode: 0o700 })
     const out = openSync(LOG, 'a', 0o600)
-    spawn(process.execPath, [fileURLToPath(import.meta.url), '--serve', '--profile', PROFILE], { detached: true, stdio: ['ignore', out, out], env: withoutDshHome(process.env) }).unref()
+    const pass = [['--profile', PROFILE], ['--dsh', DSH_OPTION], ['--stamp', STAMP || undefined], ['--dsh-home', DSH_HOME_OPTION]].flatMap(([k, v]) => (v ? [k, v] : []))
+    spawn(process.execPath, [fileURLToPath(import.meta.url), '--serve', ...pass], { detached: true, stdio: ['ignore', out, out], env: withoutDshHome(process.env) }).unref()
     for (let i = 0; i < 100 && !(await reachable()); i++) await new Promise((r) => setTimeout(r, 100))
+    if (!(await reachable())) {
+      // Say why on stderr: the Desktop side shows it in the setup dialog.
+      let last = ''
+      try { last = readFileSync(LOG, 'utf8').trim().split('\n').filter((l) => /^\d{4}-/.test(l)).slice(-1)[0] ?? '' } catch {}
+      process.stderr.write(`the WSL daemon did not start${last ? `: ${last.replace(/^\S+ /, '')}` : ''} (log: ${LOG})\n`)
+      process.exit(1)
+    }
   }
   const socket = connect(SOCKET)
   socket.once('connect', () => {

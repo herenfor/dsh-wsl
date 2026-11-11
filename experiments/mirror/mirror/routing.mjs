@@ -22,7 +22,7 @@ const MERGED_LISTS = new Set(['session/list', 'session/search'])
 const MERGED_STREAMS = new Set(['workspace/follow', 'session/control', '$events'])
 const RUN_TARGETS_FILE = join(homedir(), '.dsh-wsl', 'run-targets.json')
 
-export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, distro }) {
+export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, distro, setupState = () => 'connected' }) {
   const logger = ctx.logger
   const paths = () => pathMapping(process.platform, distro())
 
@@ -290,6 +290,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
         target: isWsl(workspaceId) ? 'wsl' : runTargets.get(workspaceId) ?? 'local',
         insideWsl: isWsl(workspaceId),
         wslAvailable: available(),
+        setup: setupState(),
         distro: distro() ?? null,
         wslPath: folder ? (isWsl(workspaceId) ? folder.path : paths().toWsl(folder.path)) : null,
         ...(presetAvailable === undefined ? {} : { presetAvailable }),

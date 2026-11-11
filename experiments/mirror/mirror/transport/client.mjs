@@ -9,23 +9,33 @@ import { Mux } from './mux.mjs'
 /**
  * @param options.command - executable, e.g. 'wsl.exe' (or process.execPath in tests)
  * @param options.args - its arguments, ending in '--bridge'
+ * @param options.resolve - instead of command/args: async () => {command, args} or null when the WSL side is not set
+ *   up; asked before every (re)connect. While it answers null the bridge waits for retry().
  * @param options.caps - what this side serves for the WSL side, e.g. ['credentials'] (announced after hello)
  * @returns a Bridge: events 'state' ({ connected, dsh, hello }); request(); agent; close()
  */
-export function startBridge({ command, args, caps = [], log = () => {} }) {
+export function startBridge({ command, args, resolve, caps = [], log = () => {} }) {
   const bridge = new EventEmitter()
-  let mux, child, stopped = false, delay = 500
+  let mux, child, stopped = false, delay = 500, timer, starting = false
   bridge.state = { connected: false, dsh: { state: 'unknown' }, hello: null }
   const set = (patch) => { bridge.state = { ...bridge.state, ...patch }; bridge.emit('state', bridge.state) }
 
-  const run = () => {
-    child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
-    child.stderr.on('data', (c) => log(`bridge stderr: ${c.toString('utf8').trimEnd()}`))
+  const run = async () => {
+    timer = undefined
+    if (stopped || starting || child) return
+    starting = true
+    let target = { command, args }
+    try { if (resolve) target = await resolve() } catch (error) { log(`bridge: ${error.message}`); target = null }
+    starting = false
+    if (stopped) return
+    if (!target) { set({ connected: false, dsh: { state: 'unknown' } }); return }
+    child = spawn(target.command, target.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    child.stderr.on('data', (c) => { const text = c.toString('utf8').trimEnd(); log(`bridge stderr: ${text}`); if (text) set({ lastError: text.split('\n').slice(-1)[0] }) })
     mux = new Mux(child.stdout, child.stdin, { side: 'opener' })
     // Streams the WSL side opens (e.g. {kind:'credentials'}) go to the 'stream' listeners; none → refused.
     mux.on('stream', (stream, target) => { if (bridge.listenerCount('stream') > 0) bridge.emit('stream', stream, target); else stream.destroy(new Error('not served')) })
     mux.on('control', (m) => {
-      if (m.type === 'hello') { delay = 500; mux.control({ type: 'client', caps }); set({ connected: true, hello: m }) }
+      if (m.type === 'hello') { delay = 500; mux.control({ type: 'client', caps }); set({ connected: true, hello: m, lastError: undefined }) }
       else if (m.type === 'dsh') set({ dsh: { state: m.state, origin: m.origin, token: m.token, exit: m.exit } })
     })
     const down = (why) => {
@@ -33,13 +43,26 @@ export function startBridge({ command, args, caps = [], log = () => {} }) {
       set({ connected: false, dsh: { state: 'unknown' } })
       if (stopped) return
       log(`bridge down${why ? `: ${why}` : ''}; retry in ${delay} ms`)
-      setTimeout(run, delay).unref?.()
+      timer = setTimeout(run, delay); timer.unref?.()
       delay = Math.min(delay * 2, 15_000)
     }
-    child.once('exit', (code) => { mux.close(); down(`exit ${code}`) })
+    const own = child
+    child.once('exit', (code) => { mux.close(); if (child === own) child = undefined; down(`exit ${code}`) })
     child.once('error', (e) => down(e.message))
   }
   run()
+  /** Connect now if not connected (after the person set up the WSL side). */
+  bridge.retry = () => {
+    if (stopped || child || starting) return
+    clearTimeout(timer); delay = 500; void run()
+  }
+  /** Drop the connection and connect again (another distribution, a re-check). */
+  bridge.restart = () => {
+    if (stopped) return
+    clearTimeout(timer); delay = 500
+    if (child) child.kill()   // its exit reconnects after `delay`
+    else void run()
+  }
 
   // HTTP over the bridge: every connection is one multiplexed stream to the DSH Host.
   bridge.agent = new (class extends http.Agent {

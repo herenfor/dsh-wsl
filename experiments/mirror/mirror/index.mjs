@@ -11,6 +11,7 @@ import { Readable } from 'node:stream'
 import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES } from './settings.mjs'
+import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection']
@@ -84,22 +85,6 @@ export async function apply(ctx, config = {}) {
   const INNER = 'x-dsh-wsl-mirror-inner'
   let remoteNamespaces = new Set()
   const readBody = async (req) => { const parts = []; for await (const c of req) parts.push(c); return Buffer.concat(parts) }
-  // Where the official Plugins page manages plugins: 'local' (this Host, the default) or 'wsl'. Set with
-  // POST /wsl-bridge/plugin-target {"target": "wsl" | "local"}; read with GET.
-  let pluginTarget = readRemote(config ?? {}).pluginTarget === 'wsl' ? 'wsl' : 'local'
-  const PLUGIN_NAMESPACES = new Set(['pluginManager', 'pluginInventory', 'pluginMarket', 'pluginRecommendations', 'pluginRegistryProbe'])
-  ctx.effect(() => ws.register({
-    kind: 'exact', path: '/wsl-bridge/plugin-target',
-    async handler(req, res) {
-      const admission = ctx.connection.admit(req)
-      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
-      if (req.method === 'POST') {
-        try { const t = JSON.parse((await readBody(req)).toString('utf8')).target; if (t === 'wsl' || t === 'local') pluginTarget = t } catch {}
-      }
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ target: pluginTarget }))
-    },
-  }), 'wsl-mirror: plugin target route')
   const forwardApi = async (path, body) => fetch(`${remote}${path}`, {
     method: 'POST', body,
     headers: { cookie: await cookie(), origin: remote, 'content-type': 'application/json' },
@@ -112,13 +97,40 @@ export async function apply(ctx, config = {}) {
     res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
     res.end(Buffer.from(await upstream.arrayBuffer()))
   }
+  // The official Plugins page over both Hosts (see plugins.mjs). Installs started on the WSL Host are remembered by
+  // request id, so waiting for or cancelling them goes there too.
+  const wslInstalls = new Set()
+  const ownHost = (req, body) => fetch(`${ws.getOrigin()}${new URL(req.url, 'http://x').pathname}`, {
+    method: 'POST', body,
+    headers: { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
+  }).then((r) => r.json())
+  async function pluginCall(req, res, next, pathname, endpoint) {
+    const body = await readBody(req)
+    const json = (value) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
+    if (LIST_METHODS.has(endpoint)) {
+      const [mine, theirs] = await Promise.all([ownHost(req, body), forwardApi(pathname, body).then((r) => r.json()).catch(() => undefined)])
+      if (mine?.result?.ok && theirs?.result?.ok) mine.result.value = mergeList(endpoint, mine.result.value, theirs.result.value)
+      return json(mine)
+    }
+    let message
+    try { message = JSON.parse(body.toString('utf8')) } catch {}
+    const stripped = stripPrefix(message?.payload)
+    const requestId = message?.payload?.args?.requestId ?? message?.payload?.args?.options?.requestId
+    const toWsl = stripped.wsl || (requestId !== undefined && wslInstalls.has(requestId))
+    if (!toWsl) { req[Symbol.asyncIterator] = async function* () { yield body }; return next() }
+    if (endpoint === 'pluginManager/installBundle' && requestId !== undefined) wslInstalls.add(requestId)
+    const answerJson = await forwardApi(pathname, Buffer.from(JSON.stringify({ ...message, payload: stripped.value }))).then((r) => r.json())
+    if (answerJson?.result?.ok) answerJson.result.value = prefixResult(answerJson.result.value)
+    return json(answerJson)
+  }
+
   ctx.on('connection/request', async (req, res, next) => {
     const pathname = new URL(req.url ?? '/', 'http://x').pathname
     const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
     if (!sameVersion || req.headers[INNER] !== undefined) return next()
-    const namespace = /^\/api\/([A-Za-z]+)\//.exec(pathname)?.[1]
-    if (pluginTarget === 'wsl' && PLUGIN_NAMESPACES.has(namespace)) return answer(res, await forwardApi(pathname, await readBody(req)))
+    const endpoint = /^\/api\/([A-Za-z]+\/[A-Za-z]+)$/.exec(pathname)?.[1]
+    if (endpoint && PLUGIN_NAMESPACES.has(endpoint.split('/')[0])) return pluginCall(req, res, next, pathname, endpoint)
     if (method === undefined) return next()
     const body = await readBody(req)
     if (method === 'describe') {

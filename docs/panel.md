@@ -54,3 +54,25 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
   - 需要验证：官方页面是否接受改写后的 ID，两边同名的内置插件怎么并列显示，安装时怎么选择装到哪一边。
 - **按会话决定在哪边运行，不做全局开关**：会话 A 在 Desktop 运行，会话 B 开了 WSL 模式就在 WSL 运行，侧栏正常列出两边的会话（这一部分属于桥接的"按会话分流"）。
 - 已实现的 `/wsl-bridge/plugin-target` 开关只是实验，最终会被"两边全部标注"取代。
+
+## 两边插件合并列出（2026-11-11，WSL 内两个 DSH 间已验证）
+
+做法：在 mirror 的 `connection/request` 钩子里处理 `pluginManager/*` 和 `pluginInventory/*`（实现见 `experiments/mirror/mirror/plugins.mjs`）：
+
+- **列表**：`listBundles`、`listPlugins`、`pluginInventory/list` 同时问两边，合并后返回。
+  - 每个插件标题后面加上"· Windows"或"· WSL"。
+  - WSL 一侧条目的 ID（`name`、`entryId`、`patchId`、`rows[].entryId`）加上 `wsl:` 前缀。两边都有的同名内置插件因此可以并列，开关状态各自独立。
+- **操作**：参数里任何字符串带 `wsl:` 前缀，就去掉前缀转给 WSL Host，返回的 `target`、`bundle` 再加回前缀。
+  - 在 WSL 发起的安装会记下它的 `requestId`，之后的 `waitForInstall`、`cancelInstall` 也发往 WSL。
+- 已删除实验用的"管理位置"开关。
+
+结果：
+
+| 检查 | 结果 |
+|---|---|
+| 列表 | 插件 52 个（两边各 26 个），插件条目 413 个；"已安装插件"里同时有 `dsh-wsl-mirror · Windows` 和 `dsh-runtime-tuning · WSL` 等 |
+| 详情页 | 点击 `dsh-runtime-tuning · WSL` 打开详情，README 从 WSL 读取；ID 行显示 `wsl:dsh-runtime-tuning` |
+| 停用和启用 | 经 A 停用 WSL 的 probe 后，B 上该插件停止，A 转发的路由随之消失；再启用后恢复 |
+| 安装和卸载 | 经 A 安装 `wsl:/home/s/dsh-sentinel`，装进 B 的 `desktop-wsl` profile，A 的 profile 不变；经 A 卸载后 B 恢复原样 |
+
+待定：在官方"添加插件"对话框里怎么选择装到哪一边。目前要在包名前手动加 `wsl:`，只是实验做法。

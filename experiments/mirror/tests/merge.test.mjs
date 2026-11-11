@@ -75,3 +75,22 @@ test('settings: WSL-only namespaces are added after this Host\'s own; shared one
   assert.equal(settingsMethod('/api/settings/mutate/x'), undefined)
   assert.equal(settingsMethod('/api/session/list'), undefined)
 })
+
+import { mergeBundles, mergeInventory, mergePlugins, prefixResult, stripPrefix } from '../mirror/plugins.mjs'
+
+test('plugins: both sides are listed and labelled; WSL ids carry the prefix', () => {
+  const local = [{ name: '@deepseek-ai/dsh-base', meta: { title: 'Base' }, enabled: true }]
+  const remote = [{ name: '@deepseek-ai/dsh-base', meta: { title: 'Base' }, enabled: false }, { name: 'dsh-runtime-tuning', rows: [{ rowId: 'r', entryId: 'include:r' }] }]
+  const b = mergeBundles(local, remote)
+  assert.deepEqual(b.map((x) => `${x.name}|${x.meta.title}|${x.enabled ?? ''}`), ['@deepseek-ai/dsh-base|Base · Windows|true', 'wsl:@deepseek-ai/dsh-base|Base · WSL|false', 'wsl:dsh-runtime-tuning|dsh-runtime-tuning · WSL|'])
+  assert.equal(b[2].rows[0].entryId, 'wsl:include:r')
+  assert.deepEqual(mergePlugins([{ entryId: 'a', patchId: 'a' }], [{ entryId: 'include:p', patchId: 'p' }, { entryId: 'x', readOnlyReason: 'r' }]).map((p) => `${p.entryId}/${p.patchId ?? '-'}`), ['a/a', 'wsl:include:p/wsl:p', 'wsl:x/-'])
+  const inv = mergeInventory({ entries: [{ entryId: 'a' }], agentPresets: [1], managementAvailable: true }, { entries: [{ entryId: 'b' }], agentPresets: [2] })
+  assert.deepEqual(inv, { entries: [{ entryId: 'a' }, { entryId: 'wsl:b' }], agentPresets: [1], managementAvailable: true })
+})
+
+test('plugins: a prefixed argument sends the call to WSL without the prefix, and its result gets the prefix back', () => {
+  assert.deepEqual(stripPrefix({ args: { name: 'wsl:dsh-runtime-tuning', enabled: false } }), { value: { args: { name: 'dsh-runtime-tuning', enabled: false } }, wsl: true })
+  assert.deepEqual(stripPrefix({ args: { name: 'dsh-x' } }), { value: { args: { name: 'dsh-x' } }, wsl: false })
+  assert.deepEqual(prefixResult({ changed: true, target: 'dsh-x', bundle: 'dsh-x', stage: 'enable' }), { changed: true, target: 'wsl:dsh-x', bundle: 'wsl:dsh-x', stage: 'enable' })
+})

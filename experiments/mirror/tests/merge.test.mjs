@@ -46,3 +46,32 @@ test('requested packages of combos, chunks and assets', () => {
   assert.deepEqual(requestedPackages('/plugins/@deepseek-ai/dsh-client-ui-chat/client.x.js?rev=1'), ['@deepseek-ai/dsh-client-ui-chat'])
   assert.deepEqual(requestedPackages('/plugins/dsh-sentinel/assets/whale-1.png'), ['dsh-sentinel'])
 })
+
+import { isReserved, routesToForward } from '../mirror/routes.mjs'
+
+test('only routes the WSL Host has and this Host lacks are forwarded, never DSH-owned paths', () => {
+  const remote = { exact: ['/dsh-task-notify/events', '/dsh-wsl-probe/whoami', '/plugins/events', '/connect', '/shared'], prefix: ['/api', '/dsh-sentinel', '/plugins'] }
+  const local = { exact: new Set(['/plugins/events', '/connect', '/shared']), prefix: ['/api', '/plugins'] }
+  assert.deepEqual(routesToForward(remote, local), [
+    { kind: 'exact', path: '/dsh-task-notify/events' },
+    { kind: 'exact', path: '/dsh-wsl-probe/whoami' },
+    { kind: 'prefix', path: '/dsh-sentinel' },
+  ])
+  assert.deepEqual(routesToForward({ exact: ['/api/x', '/wsl-bridge/events', '/'] }, {}), [])
+  assert.equal(isReserved('/apix'), false)
+  assert.deepEqual(routesToForward(undefined, local), [])
+})
+
+import { mergeDescribe, settingsMethod } from '../mirror/settings.mjs'
+
+test('settings: WSL-only namespaces are added after this Host\'s own; shared ones keep this Host\'s view', () => {
+  const local = { writable: true, hasDocument: true, namespaces: [{ ns: 'ui-chat', revision: 1 }, { ns: 'locale', revision: 2 }] }
+  const remote = { writable: true, hasDocument: false, namespaces: [{ ns: 'locale', revision: 9 }, { ns: 'runtime-tuning-ui-chat', revision: 3 }] }
+  const { value, remoteNamespaces } = mergeDescribe(local, remote)
+  assert.deepEqual(value.namespaces.map((v) => `${v.ns}@${v.revision}`), ['ui-chat@1', 'locale@2', 'runtime-tuning-ui-chat@3'])
+  assert.equal(value.hasDocument, true)
+  assert.deepEqual([...remoteNamespaces], ['runtime-tuning-ui-chat'])
+  assert.equal(settingsMethod('/api/settings/mutate'), 'mutate')
+  assert.equal(settingsMethod('/api/settings/mutate/x'), undefined)
+  assert.equal(settingsMethod('/api/session/list'), undefined)
+})

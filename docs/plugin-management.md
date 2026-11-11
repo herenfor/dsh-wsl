@@ -103,10 +103,29 @@ B 装调优插件、哨兵和 agent，A 只装 mirror。用 headless Chromium �
   - npm 包和 Desktop 都随附对应版本的源码和文档。
 - 调优插件需要复查的：Session 批量追加事件（包装追加接口的插件要适配），以及工具失败的新错误类型。
 
+### 按主场转发（2026-11-11，WSL 内两个 DSH 间已验证）
+
+镜像插件的界面要和它的宿主部分通信，有这几条路。各条路的转发方式：
+
+| 通信方式 | 例子 | 做法 | 状态 |
+|---|---|---|---|
+| 插件自己注册的 HTTP 路由 | 哨兵 `dsh-task-notify/events`、probe `dsh-wsl-probe/whoami` | agent 报告 B 的路由表（每 2 秒比较一次，有变化就推送），mirror 在 A 上注册"B 有、A 没有"的路由，排除 DSH 自己的路径（`/`、`/api`、`/plugins`、`/connect`、`/assets`），并转发到 B | 已实现 |
+| 只在 B 存在的设置命名空间 | 调优替身的 `runtime-tuning-ui-chat` | 在 client-connection 的 `connection/request` 钩子里：`settings/describe` 合并两边，B 独有的命名空间排在后面；`update`、`replace`、`mutate` 写 B 独有命名空间时转发到 B | 已实现 |
+| 两边都有的设置命名空间 | 模型、沙箱、主题、语言等 21 个 | 目前留在 A | **待决定** |
+| 插件自己的 Typert 远程服务 | `/api/<命名空间>/<方法>`，以及 `/api/remote.mux` 上的流 | 单次调用可按命名空间转发；流在同一条 WebSocket 上复用，需要在客户端拆分（dsh-ssh-workspace 的做法） | 未做 |
+| 插件的 WebSocket 升级路由 | `registerUpgrade` | 需要转发 WebSocket | 未做 |
+
+- **校验**：转发前用 A 自己的 `connection.admit(req)` 检查登录和 Origin。验证结果：不带 cookie 返回 401，跨站请求返回 403，带登录时返回 B 的结果。B 的 cookie 只在 mirror 里使用，`set-cookie` 不会传给页面。
+- **结果**：
+  - probe 徽章第二行变成"宿主：linux …"，返回的是 B 的 pid；
+  - 经 A 写入 `runtime-tuning-ui-chat` 的设置，落在 B（revision 0 → 1）；
+  - 两边都有的 `locale` 仍读写 A。
+- **依赖的内部接口**：web server 的 `exact`、`prefixes`、`upgrades` 三个私有 Map；`connection.admit`；`connection/request` 钩子；settings 的 `describe`、`update`、`replace`、`mutate`。每个 DSH 版本都要实测。
+
 ### 实验暴露的缺口
 
-1. **插件自己注册的 HTTP 路由**：哨兵界面请求 `dsh-task-notify/events`，在 A 上得到 404，因为这个路由由 B 的宿主部分注册。镜像插件的路由需要转给 B。
-2. **不带会话 ID 的宿主调用**：调优替身把显示设置存在 `runtime-tuning-ui-chat` 这个命名空间下，对应的加载条目只在 B。这类调用需要按插件的主场转发，按会话分流管不到。
+1. ~~**插件自己注册的 HTTP 路由**~~（已解决，见"按主场转发"）：哨兵界面请求 `dsh-task-notify/events`，在 A 上得到 404，因为这个路由由 B 的宿主部分注册。镜像插件的路由需要转给 B。
+2. **不带会话 ID 的宿主调用**（只在 B 存在的设置命名空间已解决；两边都有的命名空间和 Typert 服务见"按主场转发"）：调优替身把显示设置存在 `runtime-tuning-ui-chat` 这个命名空间下，对应的加载条目只在 B。这类调用需要按插件的主场转发，按会话分流管不到。
 3. **插件路由不验证登录**：B 上 agent 的 `/wsl-bridge/events` 不带 cookie 也返回 200。DSH 只对 `/api` 等官方入口做校验，插件注册的路由要自己保护。正式方案里 WSL Host 不开 TCP 端口（见 `bridge-plan.md`），A 端转发也只能接受本机已登录的页面。
 4. **还没验证的**：
    - mirror dispose 后恢复原清单；

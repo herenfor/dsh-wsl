@@ -1,0 +1,3 @@
+- insert:
+    - id: wsl-probe
+      name: dsh-wsl-probe

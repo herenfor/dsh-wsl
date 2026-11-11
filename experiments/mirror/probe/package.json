@@ -1,0 +1,13 @@
+{
+  "name": "dsh-wsl-probe",
+  "version": "0.0.0-experiment",
+  "private": true,
+  "type": "module",
+  "description": "Experiment: an obvious UI plugin for checking the mirror. Shows a badge in the corner and asks its own host half which machine it runs on.",
+  "exports": { ".": "./index.mjs", "./client": "./client.js" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-layout"] },
+    "manifestVersion": 1
+  }
+}

@@ -2,6 +2,8 @@
 // registry publish the merged graph, so the page here mounts the WSL Host's user plugins; their bundle, chunk and asset
 // requests are forwarded to the WSL Host. It patches two members of the registry instance (`composed` and
 // `fetchBundle`) and restores them on dispose.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { mergeGraphs, requestedPackages } from './merge.mjs'
@@ -12,9 +14,21 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const EVENTS = '/wsl-bridge/events'
 const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-length']
 
+// Experiment only: without remote and token in the entry config, read them from ~/.dsh-wsl/remote.json.
+export const REMOTE_FILE = join(homedir(), '.dsh-wsl', 'remote.json')
+// Experiment only: the latest merge outcome, so a test can read it without access to the Host's logger.
+export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
+function writeStatus(status) {
+  try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
+}
+function readRemote(config) {
+  if (config.remote && config.token) return config
+  try { return JSON.parse(readFileSync(REMOTE_FILE, 'utf8')) } catch { return {} }
+}
+
 export async function apply(ctx, config = {}) {
-  const { remote, token } = config
-  if (!remote || !token) { ctx.logger.warn('wsl-mirror: config needs remote and token'); return }
+  const { remote, token } = readRemote(config ?? {})
+  if (!remote || !token) { writeStatus({ reason: 'no remote configured' }); ctx.logger.warn('wsl-mirror: no remote; set remote and token in config or %s', REMOTE_FILE); return }
   const reg = ctx.clientModules
   const { orderByModuleGraph } = await import(pathToFileURL(join(dirname(reg.clientPath(MODULES_ID)), 'index.js')).href)
 
@@ -23,6 +37,7 @@ export async function apply(ctx, config = {}) {
   let state = mergeGraphs(raw, undefined, orderByModuleGraph)
   const recompute = () => {
     state = mergeGraphs(raw, remoteGraph, orderByModuleGraph)
+    writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], reason: state.reason })
     ctx.logger.info('wsl-mirror: %d mirrored rows%s', state.mirrored.size, state.reason ? ` (${state.reason})` : `: ${[...state.mirrored.keys()].join(', ')}`)
   }
   const originalFetch = reg.fetchBundle
@@ -84,6 +99,7 @@ export async function apply(ctx, config = {}) {
         }
       } catch (error) {
         if (stopped) return
+        writeStatus({ local: raw.release, mirrored: [...state.mirrored.keys()], reason: `connection: ${error.message}` })
         ctx.logger.warn('wsl-mirror: %s', error.message)
         cookieValue = undefined
       }

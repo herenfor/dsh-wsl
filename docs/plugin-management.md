@@ -70,6 +70,39 @@ B 装调优插件、哨兵和 agent，A 只装 mirror。用 headless Chromium �
 
 结论：**界面镜像可行。插件只装在 WSL，界面在 Desktop 窗口里出现并运行，宿主部分只在 WSL。** 原来的方案 A（Windows 也装、只挂界面）不再需要。
 
+### 真实 Desktop 验证（2026-11-11，Desktop 0.2.2-rc.1，Windows）
+
+- WSL 端：`~/.dsh/profiles/desktop-wsl`，装调优插件、`dsh-wsl-probe`（右下角徽章，第二行询问自己的宿主部分）和 agent，`dsh web` 监听 `127.0.0.1:47201`。Windows 通过 WSL 的 localhost 转发访问它。
+- Desktop 端：在插件页安装本地路径 `C:\Users\S\dsh-wsl-test\mirror`（pnpm 以 `link:` 方式安装，**本地绝对路径可以绕开私有仓库的权限问题**）。连接信息从 `%USERPROFILE%\.dsh-wsl\remote.json` 读取。
+- 结果：
+  - 点击"立即启用"后，徽章出现在 Desktop 窗口右下角，不需要重启。
+  - 第二行显示"宿主不可达（HTTP 404）"，符合预期（缺口 1）。
+  - Desktop 原有界面正常。
+
+**结论：镜像在 Electron 窗口加 Windows Host 下成立；Windows 与 WSL 官方界面代码中 CSS 类名哈希不同，也不影响。**
+
+### 版本跟随：Desktop 可能先于 npm 发布
+
+2026-11-11，Desktop 开始更新到 0.2.2-rc.2，此时 npm（官方源和 npmmirror）上最新的仍是 rc.1，而官方 GitHub 仓库 `deepseek-ai/deepseek-harness`（公开）已有标签 `dsh-v0.2.2-rc.2`。
+
+- 两边版本不同时，mirror 按设计不做镜像，Desktop 正常运行，WSL 插件的界面暂时不出现。
+- WSL 端部署不能只依赖 npm。备选来源：
+  1. 按 Desktop 版本对应的 GitHub 标签从源码构建；
+  2. 等 npm 发布。
+- 页面比较版本时，用的是 `release` 里的 `{version, commit}`，commit 是构建时写进去的。**源码构建得到的 commit 必须与 Desktop 的一致**，这一点需要验证。
+
+### 对照 0.2.2-rc.2（2026-11-11 发布）
+
+- 镜像依赖的包，在 rc.1 → rc.2 之间只有版本号更新和"随包发布源码"的提交：`client-modules`、`client-hmr`、`host-webserver` 各 2 个提交，`client-connection` 3 个，`ui-layout` 3 个。`client-modules/src/index.ts` 两个版本逐行相同，`composed`、`fetchBundle`、`notifyGraphChanged` 都在。
+- 与本项目有关的变更：
+  - 可选插件加载失败不再导致整个页面无法启动；启用但未加载的插件会显示"未运行"及原因。
+  - 自定义浮层需适配新的菜单定位接口：界面插件跨版本可能失效，说明兼容检查有必要。
+  - AgentTeam："共享会话的进程须同步升级"，再次说明两边版本必须一致。
+  - 模型请求的 User-Agent 增加启动配置标记，用于区分桌面端、Web、命令行和 SDK。
+  - Desktop 可切换正式版和开发版更新渠道：版本跟随要考虑渠道。
+  - npm 包和 Desktop 都随附对应版本的源码和文档。
+- 调优插件需要复查的：Session 批量追加事件（包装追加接口的插件要适配），以及工具失败的新错误类型。
+
 ### 实验暴露的缺口
 
 1. **插件自己注册的 HTTP 路由**：哨兵界面请求 `dsh-task-notify/events`，在 A 上得到 404，因为这个路由由 B 的宿主部分注册。镜像插件的路由需要转给 B。

@@ -121,4 +121,10 @@ test('plugin updates: newest compatible, not deprecated, releases only unless on
   assert.equal(pickUpdate(list, '0.2.5-rc.1').version, '0.3.1-rc.1')
   assert.equal(pickUpdate({ status: 'listed', versions: [v('0.5.0', { bundle: false })] }, '0.2.5'), undefined)
   assert.equal(pickUpdate({ status: 'refused' }, '0.2.5'), undefined)
+  const { updateKind } = await import('../mirror/selfupdate.mjs')
+  assert.equal(updateKind({ updatable: true }), 'registry')     // DSH 0.2.2-rc.1
+  assert.equal(updateKind({ updatable: false }), undefined)
+  assert.equal(updateKind({ update: 'registry' }), 'registry')  // 0.2.2-rc.2
+  assert.equal(updateKind({ update: 'git' }), 'git')
+  assert.equal(updateKind({}), undefined)
 })

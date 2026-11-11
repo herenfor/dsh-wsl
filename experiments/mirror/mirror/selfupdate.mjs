@@ -20,6 +20,12 @@ export function pickUpdate(list, installed) {
 }
 
 /**
+ * How the plugin manager can update a listed bundle: DSH 0.2.2-rc.2 lists `update: 'registry' | 'git'`, earlier
+ * releases `updatable: boolean` (registry only). Only registry updates are used here.
+ */
+export const updateKind = (row) => row?.update ?? (row?.updatable ? 'registry' : undefined)
+
+/**
  * Check now and then; returns {state(), check()}. `state()` is what the setup dialog shows:
  * {name, version, auto, status, latest?, error?, at?} with status one of: waiting, off, checking, not-updatable,
  * up-to-date, updating, updated, restart-required, failed.
@@ -39,7 +45,7 @@ export function installSelfUpdate(ctx, { name, version, auto, log = () => {} }) 
       set({ status: 'checking', error: undefined })
       try {
         const row = (await manager.listBundles()).find((b) => b.name === name)
-        if (!row?.updatable) { set({ status: 'not-updatable' }); return }
+        if (updateKind(row) !== 'registry') { set({ status: 'not-updatable' }); return }
         const list = await manager.listVersions(name)
         if (list.status !== 'listed') { set({ status: 'failed', error: list.problem ?? list.status }); return }
         const next = pickUpdate(list, row.version ?? version)

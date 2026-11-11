@@ -109,3 +109,10 @@
   - 用户的 Desktop 改为从 npm 安装（替换现在 `link:C:\Users\S\dsh-wsl-test\mirror` 的安装），之后才能自动更新。
   - 现在不改名，是因为 Desktop 按旧名字从本地文件夹安装，改名会让它找不到插件。
 - 开发机切换到正式流程：删除 `C:\Users\S\.dsh-wsl\bridge.json` 后，按设置窗口的命令在 `~/.dsh-wsl` 装一份 DSH。这会改动用户的环境，要先问用户。
+
+## DSH 0.2.2-rc.2（2026-11-12 检查）
+
+- rc.2 只在 GitHub 上发了 Desktop 预发布；npm 上的命令行版仍是 0.2.2-rc.1，所以 WSL 端暂时装不到 rc.2。Desktop 升到 rc.2 后，WSL 端会是 rc.1：前两段相同，照样连接，设置窗口显示“WSL 端较旧”；点“更新到 rc.2”会因为 npm 上没有这个版本而失败并说明原因。
+- 对照 rc.1 与 rc.2 源码（tag `dsh-v0.2.2-rc.1` / `dsh-v0.2.2-rc.2`）：Typert 网关、连接服务（`fetchRoutes`、`admit`、`connection/request`）、文件夹控制器、网页服务器都没变；会话控制的协议改动是新增的（空消息“继续生成”、`conversationContinuation` 投影），rc.1 的 WSL 端只是不支持这些新功能；我们用的扩展点名字、`data-row-key`、创造模式和在应用中打开的接口名、凭据接口都还在。
+- 冲突一处，已修：插件列表的 `updatable: boolean` 改成了 `update: 'registry' | 'git'`，插件自动更新原来会一直判为“不能更新”。`selfupdate.mjs` 的 `updateKind` 两种都认。
+- 没有实测 rc.2 Desktop + rc.1 WSL 的组合：rc.2 没有 Linux 可运行的包，测试 Desktop 只能用 rc.1。

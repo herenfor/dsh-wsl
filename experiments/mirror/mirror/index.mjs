@@ -7,7 +7,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
+import http from 'node:http'
 import { Readable } from 'node:stream'
+import { startBridge } from './transport/client.mjs'
 import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
@@ -20,22 +22,50 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const EVENTS = '/wsl-bridge/events'
 const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-length']
 
-// Experiment only: without remote and token in the entry config, read them from ~/.dsh-wsl/remote.json.
-export const REMOTE_FILE = join(homedir(), '.dsh-wsl', 'remote.json')
-// Experiment only: the latest merge outcome, so a test can read it without access to the Host's logger.
+// How to reach the WSL side: a bridge command speaking the transport protocol (see ../../transport). Taken from the
+// entry config, else ~/.dsh-wsl/bridge.json: { "command": "wsl.exe", "args": ["-d", "Ubuntu", "--exec", "<node>",
+// "<daemon.mjs>", "--bridge", "--profile", "desktop-wsl"] }. The WSL Host's address and launch token arrive over the
+// bridge and stay in memory.
+export const BRIDGE_FILE = join(homedir(), '.dsh-wsl', 'bridge.json')
 export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
 function writeStatus(status) {
   try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
 }
-function readRemote(config) {
-  if (config.remote && config.token) return config
-  try { return JSON.parse(readFileSync(REMOTE_FILE, 'utf8')) } catch { return {} }
+function readBridgeConfig(config) {
+  if (config.command) return config
+  try { return JSON.parse(readFileSync(BRIDGE_FILE, 'utf8')) } catch { return {} }
 }
 
 export async function apply(ctx, config = {}) {
-  // let: re-read after a failed connection, so a restarted WSL Host's new token takes effect without restarting this one.
-  let { remote, token } = readRemote(config ?? {})
-  if (!remote || !token) { writeStatus({ reason: 'no remote configured' }); ctx.logger.warn('wsl-mirror: no remote; set remote and token in config or %s', REMOTE_FILE); return }
+  const bridgeConfig = readBridgeConfig(config ?? {})
+  if (!bridgeConfig.command) { writeStatus({ reason: 'no bridge configured' }); ctx.logger.warn('wsl-mirror: no bridge; set command and args in config or %s', BRIDGE_FILE); return }
+  const bridge = startBridge({ command: bridgeConfig.command, args: bridgeConfig.args ?? [], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
+  ctx.effect(() => () => bridge.close(), 'wsl-mirror: bridge')
+  let lastToken
+  let cookieValue
+  bridge.on('state', (s) => { if (s.dsh.token !== lastToken) { lastToken = s.dsh.token; cookieValue = undefined } })
+  const remoteOrigin = () => bridge.state.dsh.origin
+
+  /** fetch-like request to the WSL DSH Host over the bridge. `body` may be a Buffer, a string or a Node stream. */
+  function remoteFetch(path, { method = 'GET', headers = {}, body, signal } = {}) {
+    return new Promise((resolve, reject) => {
+      const origin = remoteOrigin()
+      if (!origin) return reject(new Error('the WSL DSH Host is not available'))
+      const url = new URL(path, origin)
+      const req = http.request({ agent: bridge.agent, host: url.hostname, port: url.port, path: url.pathname + url.search, method, headers: { ...headers, host: url.host } }, (res) => {
+        const out = new Headers()
+        for (const [name, value] of Object.entries(res.headers)) for (const v of [].concat(value)) out.append(name, v)
+        const empty = method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304
+        if (empty) res.resume()
+        resolve(new Response(empty ? null : Readable.toWeb(res), { status: res.statusCode, headers: out }))
+      })
+      req.once('error', reject)
+      signal?.addEventListener('abort', () => req.destroy(new Error('aborted')), { once: true })
+      if (body === undefined || body === null) req.end()
+      else if (typeof body.pipe === 'function') body.pipe(req)
+      else req.end(body)
+    })
+  }
   const reg = ctx.clientModules
   const { orderByModuleGraph } = await import(pathToFileURL(join(dirname(reg.clientPath(MODULES_ID)), 'index.js')).href)
 
@@ -66,10 +96,7 @@ export async function apply(ctx, config = {}) {
       const headers = { cookie: await cookie() }
       for (const name of FORWARD_REQUEST_HEADERS) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name]
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
-      const upstream = await fetch(`${remote}${req.url}`, {
-        method: req.method, headers, signal: abort.signal, redirect: 'manual',
-        ...(hasBody ? { body: Readable.toWeb(req), duplex: 'half' } : {}),
-      })
+      const upstream = await remoteFetch(req.url, { method: req.method, headers, signal: abort.signal, ...(hasBody ? { body: req } : {}) })
       const out = {}
       for (const [name, value] of upstream.headers) if (!DROP_RESPONSE_HEADERS.has(name)) out[name] = value
       res.writeHead(upstream.status, out)
@@ -86,13 +113,13 @@ export async function apply(ctx, config = {}) {
   const INNER = 'x-dsh-wsl-mirror-inner'
   let remoteNamespaces = new Set()
   const readBody = async (req) => { const parts = []; for await (const c of req) parts.push(c); return Buffer.concat(parts) }
-  const forwardApi = async (path, body) => fetch(`${remote}${path}`, {
+  const forwardApi = async (path, body) => remoteFetch(path, {
     method: 'POST', body,
-    headers: { cookie: await cookie(), origin: remote, 'content-type': 'application/json' },
+    headers: { cookie: await cookie(), origin: remoteOrigin(), 'content-type': 'application/json' },
   })
-  const callRemoteApi = async (method, body) => fetch(`${remote}/api/settings/${method}`, {
+  const callRemoteApi = async (method, body) => remoteFetch(`/api/settings/${method}`, {
     method: 'POST', body,
-    headers: { cookie: await cookie(), origin: remote, 'content-type': 'application/json' },
+    headers: { cookie: await cookie(), origin: remoteOrigin(), 'content-type': 'application/json' },
   })
   const answer = async (res, upstream) => {
     res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
@@ -302,7 +329,7 @@ export async function apply(ctx, config = {}) {
     const { pathname, search } = new URL(request.url, 'http://x')
     const headers = { cookie: await cookie() }
     const etag = request.headers.get('if-none-match'); if (etag) headers['if-none-match'] = etag
-    const res = await fetch(`${remote}${pathname}${search}`, { method: request.method, headers })
+    const res = await remoteFetch(`${pathname}${search}`, { method: request.method, headers })
     const out = new Headers()
     for (const h of FORWARDED_HEADERS) { const v = res.headers.get(h); if (v) out.set(h, v) }
     return new Response(res.body, { status: res.status, headers: out })
@@ -316,10 +343,11 @@ export async function apply(ctx, config = {}) {
   }, 'wsl-mirror: restore registry')
 
   // Launch-token exchange: GET /?token= on the WSL Host answers with its signed browser cookie.
-  let cookieValue
   async function cookie() {
     if (cookieValue) return cookieValue
-    const res = await fetch(`${remote}/?token=${encodeURIComponent(token)}`, { redirect: 'manual' })
+    const token = bridge.state.dsh.token
+    if (!token) throw new Error('the WSL DSH Host has not started')
+    const res = await remoteFetch(`/?token=${encodeURIComponent(token)}`)
     const set = res.headers.getSetCookie()
     if (set.length === 0) throw new Error(`wsl-mirror: token exchange answered ${res.status} without a cookie`)
     return (cookieValue = set.map((c) => c.split(';')[0]).join('; '))
@@ -331,7 +359,8 @@ export async function apply(ctx, config = {}) {
   ;(async () => {
     for (let delay = 500; !stopped; delay = Math.min(delay * 2, 10_000)) {
       try {
-        const res = await fetch(`${remote}${EVENTS}`, { headers: { cookie: await cookie() }, signal: controller.signal })
+        await bridge.ready(24 * 3600_000)
+        const res = await remoteFetch(EVENTS, { headers: { cookie: await cookie() }, signal: controller.signal })
         if (!res.ok) throw new Error(`events answered ${res.status}`)
         delay = 500
         let buffer = ''
@@ -357,7 +386,6 @@ export async function apply(ctx, config = {}) {
         writeStatus({ local: raw.release, mirrored: [...state.mirrored.keys()], reason: `connection: ${error.message}` })
         ctx.logger.warn('wsl-mirror: %s', error.message)
         cookieValue = undefined
-        ;({ remote, token } = readRemote(config ?? {}))
       }
       await new Promise((r) => setTimeout(r, delay))
     }

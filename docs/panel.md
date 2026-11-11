@@ -98,7 +98,7 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
 
 截图：`images/plugins-add-menu.png`。
 
-## 官方内置插件的两边显示（待决定）
+## 官方内置插件的两边显示（已决定：一行显示两边状态）
 
 官方插件页按包名的固定列表决定内置插件怎么显示：哪些隐藏、哪些排在前面、哪些收进"More"、哪些带"Experimental"标记，都是精确匹配。WSL 一侧的 ID 加了 `wsl:` 前缀，所以：
 
@@ -109,3 +109,12 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
 截图：`images/plugins-experimental-both-sides.png`、`images/plugins-installed-both-sides.png`。
 
 另一种做法：官方内置插件每个只占一行（保持官方样式），标题标出两边的状态，例如"Agent teams · Windows 已启用 · WSL 未启用"；WSL 一侧的开关放在插件详情页（官方插槽 `plugins.detail.actions`）。用户自己装的插件不受影响，仍按两边各列一行。
+
+### 实现（2026-11-11，WSL 内已验证）
+
+- 两边同名、且属于官方的插件只保留一行（不加 `wsl:` 前缀，官方的隐藏、排序、More 收纳和 Experimental 标记都照常）。标题后面写明两边状态，中文为"· Windows · WSL 已启用/未启用"，其他语言为"· Windows · WSL on/off"。行上的开关是 Windows 的。
+- 插件详情页右上角（官方插槽 `plugins.detail.actions`）加一个 WSL 开关："WSL：未启用 [在 WSL 启用]"。经 mirror 的 `/wsl-bridge/bundle` 读取和切换 WSL 一侧。需要重启 WSL 端才能生效时，会提示出来。
+- 用户自己装的插件不变，仍然两边各一行。
+- 验证：在"Agent teams"详情页点"在 WSL 启用"，WSL 一侧变为已启用；再点停用，恢复原状。B 的 profile 恢复原样。
+
+截图：`images/plugin-detail-wsl-switch.png`。

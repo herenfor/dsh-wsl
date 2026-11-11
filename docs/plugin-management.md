@@ -111,10 +111,16 @@ B 装调优插件、哨兵和 agent，A 只装 mirror。用 headless Chromium �
 |---|---|---|---|
 | 插件自己注册的 HTTP 路由 | 哨兵 `dsh-task-notify/events`、probe `dsh-wsl-probe/whoami` | agent 报告 B 的路由表（每 2 秒比较一次，有变化就推送），mirror 在 A 上注册"B 有、A 没有"的路由，排除 DSH 自己的路径（`/`、`/api`、`/plugins`、`/connect`、`/assets`），并转发到 B | 已实现 |
 | 只在 B 存在的设置命名空间 | 调优替身的 `runtime-tuning-ui-chat` | 在 client-connection 的 `connection/request` 钩子里：`settings/describe` 合并两边，B 独有的命名空间排在后面；`update`、`replace`、`mutate` 写 B 独有命名空间时转发到 B | 已实现 |
-| 两边都有的设置命名空间 | 模型、沙箱、主题、语言等 21 个 | 目前留在 A | **待决定** |
+| 两边都有的设置命名空间 | 模型、主题、语言、子代理等 | **以 Desktop 为准，单向复制到 WSL**（见下） | 已实现 |
 | 插件自己的 Typert 远程服务 | `/api/<命名空间>/<方法>`，以及 `/api/remote.mux` 上的流 | 单次调用可按命名空间转发；流在同一条 WebSocket 上复用，需要在客户端拆分（dsh-ssh-workspace 的做法） | 未做 |
 | 插件的 WebSocket 升级路由 | `registerUpgrade` | 需要转发 WebSocket | 未做 |
 
+- **设置以 Desktop 为准**（2026-11-11 决定）：凡是 Desktop 上能调的设置，都以 Desktop 为准；只有 WSL 独有的设置交给 WSL 自己配置。
+  - **同步方式**：mirror 在进程内读取 `settings.describe()`，再与 WSL 的设置逐个顶层字段比较，用 `settings/mutate` 写入不同的值（`set`），删掉 WSL 多出来的字段（`unset`）。
+  - **触发时机**：连上 WSL 时同步一次全部，Desktop 写设置后立即同步，此外每分钟检查一次。在 WSL 一侧直接改这些设置，下次同步时会被 Desktop 的值覆盖。
+  - **不同步的**：密钥字段（每边各填各的）；只描述单台机器的命名空间 `bash-sandbox`、`pwsh-sandbox`；只有一边才有的命名空间，比如调优替身的 `runtime-tuning-ui-chat`，仍按上面的规则交给它所在的一边。
+  - **结果**：连上时复制了 A 改过的 `ui-settings-general`；A 把主题设为深色后，B 立即变成深色（revision 0 → 1）；A 清空后，B 也清空（→ 2）。
+  - 同步结果写在 `~/.dsh-wsl/mirror-status.json` 的 `settingsSync` 里。
 - **校验**：转发前用 A 自己的 `connection.admit(req)` 检查登录和 Origin。验证结果：不带 cookie 返回 401，跨站请求返回 403，带登录时返回 B 的结果。B 的 cookie 只在 mirror 里使用，`set-cookie` 不会传给页面。
 - **结果**：
   - probe 徽章第二行变成"宿主：linux …"，返回的是 B 的 pid；

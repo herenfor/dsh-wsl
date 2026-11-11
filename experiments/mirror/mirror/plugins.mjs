@@ -18,29 +18,54 @@ function labelled(meta, fallback, side) {
   return { ...(meta ?? {}), title: fallback + tag }
 }
 
-// Each WSL bundle is placed right after the Windows bundle of the same name, so the two sides of one plugin sit
-// together; bundles only one side has keep their place.
+// Labels appended to a title. An official bundle both Hosts ship keeps one row (the page styles official bundles by
+// their exact names), so its title also tells the WSL side's state; its row switch stays this Host's.
+const BOTH = {
+  zh: (on) => ` · Windows · WSL ${on ? '已启用' : '未启用'}`,
+  other: (on) => ` · Windows · WSL ${on ? 'on' : 'off'}`,
+}
+function labelledBoth(meta, fallback, wslEnabled) {
+  const title = meta?.title
+  if (title && typeof title === 'object') {
+    return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, t + (lang === 'zh' ? BOTH.zh : BOTH.other)(wslEnabled)])) }
+  }
+  return { ...(meta ?? {}), title: (typeof title === 'string' ? title : fallback) + BOTH.zh(wslEnabled) }
+}
+
+/** Whether a bundle both Hosts have is the official one, shown as a single row. */
+export const sharedOfficial = (mine, theirs) => mine !== undefined && theirs !== undefined && (mine.official || theirs.official)
+
+/**
+ * @param local - this Host's bundles.
+ * @param remote - the WSL Host's bundles, or undefined when it did not answer (then only this Host's are labelled).
+ */
 export function mergeBundles(local, remote) {
-  const mine = local.map((b) => ({ ...b, meta: labelled(b.meta, b.name, 'local') }))
-  const theirs = remote.map((b) => ({
+  const theirsByName = new Map((remote ?? []).map((b) => [b.name, b]))
+  const out = local.map((b) => {
+    const twin = theirsByName.get(b.name)
+    if (sharedOfficial(b, twin)) return { ...b, meta: labelledBoth(b.meta, b.name, twin.enabled) }
+    return { ...b, meta: labelled(b.meta, b.name, 'local') }
+  })
+  const localByName = new Map(local.map((b) => [b.name, b]))
+  for (const b of remote ?? []) {
+    if (sharedOfficial(localByName.get(b.name), b)) continue
+    out.push({
       ...b,
       name: prefixed(b.name),
       meta: labelled(b.meta, b.name, 'wsl'),
-    ...(b.rows ? { rows: b.rows.map((r) => ({ ...r, entryId: prefixed(r.entryId) })) } : {}),
-  }))
-  const pairs = new Map(theirs.map((b, i) => [remote[i].name, b]))
-  const out = []
-  for (const b of mine) { out.push(b); const twin = pairs.get(b.name); if (twin) { out.push(twin); pairs.delete(b.name) } }
-  return [...out, ...pairs.values()]
+      ...(b.rows ? { rows: b.rows.map((r) => ({ ...r, entryId: prefixed(r.entryId) })) } : {}),
+    })
+  }
+  return out
 }
 
 export function mergePlugins(local, remote) {
-  return [...local, ...remote.map((p) => ({ ...p, entryId: prefixed(p.entryId), ...(p.patchId ? { patchId: prefixed(p.patchId) } : {}) }))]
+  return [...local, ...(remote ?? []).map((p) => ({ ...p, entryId: prefixed(p.entryId), ...(p.patchId ? { patchId: prefixed(p.patchId) } : {}) }))]
 }
 
 // Inventory: entries from both sides; agent presets and management availability stay this Host's.
 export function mergeInventory(local, remote) {
-  return { ...local, entries: [...local.entries, ...remote.entries.map((e) => ({ ...e, entryId: prefixed(e.entryId) }))] }
+  return { ...local, entries: [...local.entries, ...(remote?.entries ?? []).map((e) => ({ ...e, entryId: prefixed(e.entryId) }))] }
 }
 
 export function mergeList(method, local, remote) {

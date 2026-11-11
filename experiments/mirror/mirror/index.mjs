@@ -10,12 +10,12 @@ import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { mergeGraphs, requestedPackages, sameRelease } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
-import { mergeDescribe, settingsMethod, SETTINGS_WRITES } from './settings.mjs'
+import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
 
 export const name = 'wsl-mirror'
-export const inject = ['clientModules', 'webServer', 'connection']
+export const inject = ['clientModules', 'webServer', 'connection', 'settings']
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const EVENTS = '/wsl-bridge/events'
 const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-length']
@@ -118,6 +118,35 @@ export async function apply(ctx, config = {}) {
       res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? null }))
     },
   }), 'wsl-mirror: install target route')
+  // The WSL side of one official bundle, for the switch on its detail page: GET ?name= reads it, POST {name, enabled}
+  // switches it. Answers {connected, bundle?, result?}.
+  const callWsl = async (method, args) => {
+    const r = await forwardApi(`/api/pluginManager/${method}`, Buffer.from(JSON.stringify({ type: 'client-request', rpcId: 'mirror', method: `pluginManager/${method}`, payload: { args } })))
+    const json = await r.json()
+    if (!json?.result?.ok) throw new Error(json?.result?.error?.message ?? `HTTP ${r.status}`)
+    return json.result.value
+  }
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/bundle',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
+      const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
+      if (!sameVersion) return reply({ connected: false })
+      try {
+        let result
+        let name = new URL(req.url, 'http://x').searchParams.get('name')
+        if (req.method === 'POST') {
+          const body = JSON.parse((await readBody(req)).toString('utf8'))
+          name = body.name
+          result = await callWsl('setBundleEnabled', { name, enabled: body.enabled === true })
+        }
+        const bundle = (await callWsl('listBundles', {})).find((b) => b.name === name)
+        reply({ connected: true, bundle: bundle && { name: bundle.name, enabled: bundle.enabled, installed: bundle.installed, availability: bundle.availability }, result })
+      } catch (error) { reply({ connected: true, error: error.message }) }
+    },
+  }), 'wsl-mirror: bundle route')
   const withSpec = (payload, convert) => {
     const args = payload?.args
     return typeof args?.spec === 'string' ? { ...payload, args: { ...args, spec: convert(args.spec) } } : payload
@@ -131,7 +160,7 @@ export async function apply(ctx, config = {}) {
     const json = (value) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
     if (LIST_METHODS.has(endpoint)) {
       const [mine, theirs] = await Promise.all([ownHost(req, body), forwardApi(pathname, body).then((r) => r.json()).catch(() => undefined)])
-      if (mine?.result?.ok && theirs?.result?.ok) mine.result.value = mergeList(endpoint, mine.result.value, theirs.result.value)
+      if (mine?.result?.ok) mine.result.value = mergeList(endpoint, mine.result.value, theirs?.result?.ok ? theirs.result.value : undefined)
       return json(mine)
     }
     let message
@@ -168,6 +197,46 @@ export async function apply(ctx, config = {}) {
     req[Symbol.asyncIterator] = async function* () { for await (const c of read()) { body = Buffer.concat([body, c]); yield c } }
     try { return await handler(req, res, next, ...rest) } catch (error) { ctx.logger.warn('wsl-mirror: %s', error.message); failed(res, body, error) }
   }
+
+  // Desktop → WSL settings sync for the namespaces both Hosts have (see settings.mjs): on connecting, after this Host
+  // writes settings, and once a minute.
+  let lastSync = null
+  let syncing = false
+  let syncAgain = false
+  const callSettings = async (method, args) => {
+    const r = await forwardApi(`/api/settings/${method}`, Buffer.from(JSON.stringify({ type: 'client-request', rpcId: 'mirror-sync', method: `settings/${method}`, payload: { args } })))
+    const json = await r.json()
+    if (!json?.result?.ok) throw new Error(`settings/${method}: ${json?.result?.error?.message ?? r.status}`)
+    return json.result.value
+  }
+  async function syncSettings(reason) {
+    if (syncing) { syncAgain = true; return }
+    syncing = true
+    try {
+      do {
+        syncAgain = false
+        if (remoteGraph === undefined || !sameRelease(raw.release, remoteGraph.graph.release)) return
+        const mine = ctx.settings.describe({ redactSecrets: true })
+        const theirs = await callSettings('describe', {})
+        const changed = []
+        for (const { ns, desktop, wsl } of sharedNamespaces(mine, theirs.namespaces)) {
+          const ops = syncOps(desktop, wsl)
+          if (ops.length === 0) continue
+          await callSettings('mutate', { ns, ops, expectedRevision: wsl.revision })
+          changed.push({ ns, fields: ops.map((o) => `${o.op} ${o.path.join('.')}`) })
+        }
+        lastSync = { at: new Date().toISOString(), reason, changed }
+        if (changed.length) ctx.logger.info('wsl-mirror: settings copied to WSL: %s', changed.map((c) => c.ns).join(', '))
+      } while (syncAgain)
+    } catch (error) {
+      lastSync = { at: new Date().toISOString(), reason, error: error.message }
+      ctx.logger.warn('wsl-mirror: settings sync failed: %s', error.message)
+    } finally {
+      syncing = false
+      writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], routes: [...forwarded.keys()], settingsSync: lastSync })
+    }
+  }
+  ctx.effect(() => { const t = setInterval(() => void syncSettings('periodic'), 60_000); t.unref(); return () => clearInterval(t) }, 'wsl-mirror: periodic settings sync')
 
   ctx.on('connection/request', guarded(async (req, res, next) => {
     const pathname = new URL(req.url ?? '/', 'http://x').pathname
@@ -207,7 +276,9 @@ export async function apply(ctx, config = {}) {
     try { ns = JSON.parse(body.toString('utf8'))?.payload?.args?.ns } catch {}
     if (SETTINGS_WRITES.has(method) && remoteNamespaces.has(ns)) return answer(res, await callRemoteApi(method, body))
     req[Symbol.asyncIterator] = async function* () { yield body }  // client-connection reads the body with for-await
-    return next()
+    const result = await next()
+    if (SETTINGS_WRITES.has(method)) void syncSettings(`desktop ${method} ${ns ?? ''}`.trim())
+    return result
   }))
 
   let raw = reg.composed
@@ -271,8 +342,10 @@ export async function apply(ctx, config = {}) {
             const event = buffer.slice(0, end); buffer = buffer.slice(end + 2)
             const data = event.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n')
             if (!data) continue
+            const firstAfterConnect = remoteGraph === undefined
             remoteGraph = JSON.parse(data)
             recompute()
+            if (firstAfterConnect) void syncSettings('connected')
             reg.notifyGraphChanged()
           }
         }

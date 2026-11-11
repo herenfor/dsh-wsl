@@ -78,12 +78,17 @@ test('settings: WSL-only namespaces are added after this Host\'s own; shared one
 
 import { mergeBundles, mergeInventory, mergePlugins, prefixResult, stripPrefix } from '../mirror/plugins.mjs'
 
-test('plugins: both sides are listed and labelled; WSL ids carry the prefix', () => {
-  const local = [{ name: '@deepseek-ai/dsh-base', meta: { title: 'Base' }, enabled: true }]
-  const remote = [{ name: '@deepseek-ai/dsh-base', meta: { title: 'Base' }, enabled: false }, { name: 'dsh-runtime-tuning', rows: [{ rowId: 'r', entryId: 'include:r' }] }]
+test('plugins: an official bundle both sides ship is one row telling both states; other bundles are listed per side', () => {
+  const local = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: true }, { name: 'dsh-wsl-mirror', official: false, enabled: true }]
+  const remote = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: false }, { name: 'dsh-runtime-tuning', official: false, rows: [{ rowId: 'r', entryId: 'include:r' }] }]
   const b = mergeBundles(local, remote)
-  assert.deepEqual(b.map((x) => `${x.name}|${x.meta.title}|${x.enabled ?? ''}`), ['@deepseek-ai/dsh-base|Base · Windows|true', 'wsl:@deepseek-ai/dsh-base|Base · WSL|false', 'wsl:dsh-runtime-tuning|dsh-runtime-tuning · WSL|'])
+  assert.deepEqual(b.map((x) => `${x.name}|${JSON.stringify(x.meta.title)}|${x.enabled ?? ''}`), [
+    '@deepseek-ai/dsh-x|{"en":"X · Windows · WSL off","zh":"某功能 · Windows · WSL 未启用"}|true',
+    'dsh-wsl-mirror|"dsh-wsl-mirror · Windows"|true',
+    'wsl:dsh-runtime-tuning|"dsh-runtime-tuning · WSL"|',
+  ])
   assert.equal(b[2].rows[0].entryId, 'wsl:include:r')
+  assert.deepEqual(mergeBundles(local, undefined).map((x) => x.name), ['@deepseek-ai/dsh-x', 'dsh-wsl-mirror'])
   assert.deepEqual(mergePlugins([{ entryId: 'a', patchId: 'a' }], [{ entryId: 'include:p', patchId: 'p' }, { entryId: 'x', readOnlyReason: 'r' }]).map((p) => `${p.entryId}/${p.patchId ?? '-'}`), ['a/a', 'wsl:include:p/wsl:p', 'wsl:x/-'])
   const inv = mergeInventory({ entries: [{ entryId: 'a' }], agentPresets: [1], managementAvailable: true }, { entries: [{ entryId: 'b' }], agentPresets: [2] })
   assert.deepEqual(inv, { entries: [{ entryId: 'a' }, { entryId: 'wsl:b' }], agentPresets: [1], managementAvailable: true })
@@ -112,4 +117,19 @@ test('local-directory specs are converted between Windows and WSL', () => {
   assert.equal(toWindowsSpec('/mnt/c/Users/S/x', 'Ubuntu'), 'C:\\Users\\S\\x')
   assert.equal(toWindowsSpec('file:/home/s/dsh-sentinel', 'Ubuntu'), 'file:\\\\wsl.localhost\\Ubuntu\\home\\s\\dsh-sentinel')
   assert.equal(toWindowsSpec('@scope/pkg', 'Ubuntu'), '@scope/pkg')
+})
+
+import { sharedNamespaces, syncOps } from '../mirror/settings.mjs'
+
+test('settings sync: Desktop values are copied field by field; secrets and machine-specific namespaces are not', () => {
+  const desktop = { user: { provider: 'deepseek-account', model: 'flash', apiKey: '***' }, secrets: [{ path: ['apiKey'], set: true }] }
+  const wsl = { user: { model: 'pro', extra: 1, apiKey: '***' }, secrets: [{ path: ['apiKey'], set: false }] }
+  assert.deepEqual(syncOps(desktop, wsl), [
+    { op: 'set', path: ['provider'], value: 'deepseek-account' },
+    { op: 'set', path: ['model'], value: 'flash' },
+    { op: 'unset', path: ['extra'] },
+  ])
+  assert.deepEqual(syncOps({ user: { a: [1] } }, { user: { a: [1] } }), [])
+  const shared = sharedNamespaces([{ ns: 'locale' }, { ns: 'bash-sandbox' }, { ns: 'ui-chat' }], [{ ns: 'locale' }, { ns: 'bash-sandbox' }, { ns: 'runtime-tuning-ui-chat' }])
+  assert.deepEqual(shared.map((s) => s.ns), ['locale'])
 })

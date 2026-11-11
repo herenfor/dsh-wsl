@@ -31,6 +31,9 @@ const STAMP = option('--stamp', '')
 const DSH_HOME_OPTION = option('--dsh-home')
 const AGENT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent')
 const DSH_HOST = '127.0.0.2'
+// With no Desktop connected for this long the daemon stops its DSH Host and exits: quitting Desktop stops the WSL side
+// too. The wait lets a bridge that is only being replaced (plugin reload, update) come back without a restart.
+const IDLE_MS = Number(process.env.DSH_WSL_IDLE_MS ?? 5000)
 // wsl.exe --exec starts us without a login shell, so PATH may lack ~/.local/bin: find DSH's entry script ourselves and
 // run it with this same node; its own child processes get node's directory and ~/.local/bin on PATH.
 function findDsh() {
@@ -97,6 +100,11 @@ async function serve() {
   let profileChecked = false
   let current        // the running DSH Host process
   let stopping = false
+  let idle
+  const idleSoon = () => {
+    clearTimeout(idle)
+    idle = setTimeout(() => { if (bridges.size === 0) { log(`serve: no Desktop for ${IDLE_MS} ms`); stop() } }, IDLE_MS)
+  }
 
   let restarts = 0
   const startDsh = () => {
@@ -145,8 +153,9 @@ async function serve() {
       if (first !== token) { log('bridge rejected: bad token'); socket.destroy(); return }
       const mux = new Mux(socket, socket, { side: 'acceptor' })
       bridges.add(mux)
+      clearTimeout(idle)
       log(`bridge joined (${bridges.size} open)`)
-      mux.on('close', () => { bridges.delete(mux); log(`bridge left (${bridges.size} open)`) })
+      mux.on('close', () => { bridges.delete(mux); log(`bridge left (${bridges.size} open)`); if (bridges.size === 0) idleSoon() })
       mux.on('control', (m) => { if (m?.type === 'client' && Array.isArray(m.caps)) caps.set(mux, m.caps) })
       mux.on('stream', (stream, target) => {
         if (target?.kind !== 'dsh' || dsh.state !== 'running') { stream.destroy(new Error(`no target ${JSON.stringify(target)} (dsh ${dsh.state})`)); return }
@@ -196,7 +205,7 @@ async function serve() {
 
   server.once('error', (error) => { log(`serve: cannot listen on ${SOCKET}: ${error.message}`); current?.kill('SIGTERM'); process.exit(1) })
   // DSH starts only once the socket is ours: a daemon that cannot listen leaves nothing running behind it.
-  server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`); startDsh() })
+  server.listen(SOCKET, () => { chmodSync(SOCKET, 0o600); log(`serve: listening on ${SOCKET}`); startDsh(); idleSoon() })
   const stop = () => {
     log('serve: stopping'); stopping = true; rmSync(SOCKET, { force: true })
     if (!current || current.exitCode !== null) process.exit(0)

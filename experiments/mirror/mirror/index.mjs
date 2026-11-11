@@ -292,9 +292,13 @@ export async function apply(ctx, config = {}) {
   }
 
   // Each Session runs on this Host or the WSL Host (routing.mjs).
+  const available = () => remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
   const routing = installSessionRouting(ctx, {
-    bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody,
-    available: () => remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release),
+    bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available,
+    whenAvailable: (signal) => new Promise((resolve) => {
+      const done = () => { if (!available() && !signal.aborted) return; availability.removeEventListener('change', done); signal.removeEventListener('abort', done); resolve() }
+      availability.addEventListener('change', done); signal.addEventListener('abort', done); done()
+    }),
     distro: () => remoteGraph?.distro ?? setup.distro,
     setupState: () => publicSetup().state,
   })
@@ -492,6 +496,7 @@ export async function apply(ctx, config = {}) {
 
   let raw = reg.composed
   let remoteGraph
+  const availability = new EventTarget()   // "change" when the WSL Host comes or goes (routing waits on it)
   let state = mergeGraphs(raw, undefined, orderByModuleGraph)
   const recompute = () => {
     state = mergeGraphs(raw, remoteGraph, orderByModuleGraph)
@@ -558,13 +563,14 @@ export async function apply(ctx, config = {}) {
             recompute()
             if (firstAfterConnect) void syncSettings('connected')
             reg.notifyGraphChanged()
+            availability.dispatchEvent(new Event('change'))
           }
         }
         throw new Error('events stream ended')
       } catch (error) {
         if (stopped) return
         // Disconnected: stop mirroring and forwarding until the WSL Host is back, rather than act on a stale graph.
-        if (remoteGraph !== undefined) { remoteGraph = undefined; recompute(); reg.notifyGraphChanged() }
+        if (remoteGraph !== undefined) { remoteGraph = undefined; recompute(); reg.notifyGraphChanged(); availability.dispatchEvent(new Event('change')) }
         writeStatus({ local: raw.release, mirrored: [...state.mirrored.keys()], reason: `connection: ${error.message}` })
         ctx.logger.warn('wsl-mirror: %s', error.message)
         cookieValue = undefined

@@ -22,7 +22,7 @@ const MERGED_LISTS = new Set(['session/list', 'session/search'])
 const MERGED_STREAMS = new Set(['workspace/follow', 'session/control', '$events'])
 const RUN_TARGETS_FILE = join(homedir(), '.dsh-wsl', 'run-targets.json')
 
-export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, distro, setupState = () => 'connected' }) {
+export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, whenAvailable, distro, setupState = () => 'connected' }) {
   const logger = ctx.logger
   const paths = () => pathMapping(process.platform, distro())
 
@@ -324,8 +324,10 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
   const originalOpen = gateway.openWireStream
   gateway.openWireStream = async function (endpoint, payload, uplink, peer, signal, control, window) {
     const native = () => originalOpen.call(this, endpoint, payload, uplink, peer, signal, control, window)
-    if (!available()) return native()
+    // The merged streams take in the WSL Host whenever it comes: one opened before WSL connected (Desktop starting,
+    // the person still setting WSL up) keeps trying it, and picks it up once it is there.
     if (MERGED_STREAMS.has(endpoint)) return merged(endpoint, payload, signal, await native())
+    if (!available()) return native()
     let route
     try { route = routeOf(payload?.args, endpoint) } catch (error) { throw remoteError({ code: error.code, message: error.message }) }
     if (route === 'local') return native()
@@ -344,7 +346,15 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       try { for await (const value of native) queue.push({ source: 'local', value }); queue.push({ source: 'local', end: true }) } catch (error) { queue.push({ source: 'local', error }) }
     })()
     void (async () => {
+      // While WSL is not there this waits for it to come (no polling); while the WSL stream is open nothing retries.
+      // Only a stream that fails while WSL is there is retried, with backoff.
       for (let attempt = 0; !combined.aborted; attempt++) {
+        if (!available()) {
+          queue.push({ source: 'wsl', down: true })
+          await whenAvailable(combined)
+          attempt = 0
+          continue
+        }
         try {
           for await (const value of mux.open(endpoint, translate(payload, false), combined)) { attempt = 0; queue.push({ source: 'wsl', value: translate(value, true) }) }
         } catch (error) { if (combined.aborted) return; if (attempt === 0) logger.debug('wsl-mirror: %s from WSL: %s', endpoint, error.message) }
@@ -429,12 +439,24 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
             wslClient = frame.clientId
             // A WSL Host that (re)connected has not seen the page's APIs yet.
             if (wslCordis.manifest !== undefined) rpc('dynamicCordisRunner/syncInspectManifest', wslCordis.manifest).catch(() => {})
+            // The page lists Sessions once per connection (session/list); WSL may come after that (Desktop started
+            // first, the person still setting WSL up, the WSL Host restarted). Its Sessions are announced to the page
+            // as added, once per WSL connection, which the page merges by id.
+            void rpc('session/list', { _request: {} }).then((result) => {
+              if (!result?.ok || signal.aborted) return
+              for (const summary of localizeSessions(translate(result.value, true).items, paths())) queue.push({ source: 'wsl', value: { type: 'emit', event: 'api-session/added', args: [summary] }, listed: true })
+            }).catch((error) => logger.debug('wsl-mirror: WSL session list: %s', error.message))
           }
           if (localClient !== undefined && wslClient !== undefined) eventClients.set(localClient, wslClient)
           continue
         }
         if (item.source === 'wsl' && frame.type === 'emit') noteCordis(frame)
-        const out = item.source === 'wsl' ? prefixEvent(frame) : frame
+        let out = frame
+        if (item.source === 'wsl' && !item.listed) {
+          out = prefixEvent(frame)
+          // A Session the WSL Host adds names its folder as WSL sees it; the page knows it as this side does.
+          if (out.event === 'api-session/added' && typeof out.args?.[0]?.cwd === 'string') out = { ...out, args: [localizeSessions([out.args[0]], paths())[0], ...out.args.slice(1)] }
+        }
         if (localClient === undefined) buffered.push(out); else yield out
       }
     } finally { if (localClient !== undefined) eventClients.delete(localClient) }

@@ -93,3 +93,18 @@
 ## 还没做
 
 - WSL 里的 Creator 实际查页面端接口：分流已验证（带 `wsl:` 前缀的回答由 WSL 端接收），完整流程等在 Desktop 上用 Creator 时确认。
+
+## WSL that connects after the page (verified 2026-11-12)
+
+Desktop usually starts before WSL is ready (the person still choosing reuse or private, the WSL Host restarting).
+Two things make the WSL folders and tasks show up once it connects, without reloading the page:
+
+- The merged streams (`workspace/follow`, `session/control`, `$events`) are always opened as merged. While WSL is
+  not there, the WSL half waits for the "WSL came" signal from index.mjs (no polling); while its stream is open
+  nothing retries; only a stream that fails while WSL is there is retried with backoff.
+- The page lists Sessions once per connection (`session/list`). When the WSL `$events` stream becomes ready, the
+  WSL Host's list is fetched once and announced to the page as `api-session/added` (merged by id). Live
+  `api-session/added` events from WSL also get their `cwd` mapped to the Windows path.
+
+The sidebar forgets the expansion of folders it does not see at load, so WSL folders come back collapsed; a click
+opens them.

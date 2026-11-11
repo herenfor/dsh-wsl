@@ -120,6 +120,7 @@ B 装调优插件、哨兵和 agent，A 只装 mirror。用 headless Chromium �
   - probe 徽章第二行变成"宿主：linux …"，返回的是 B 的 pid；
   - 经 A 写入 `runtime-tuning-ui-chat` 的设置，落在 B（revision 0 → 1）；
   - 两边都有的 `locale` 仍读写 A。
+- **真实 Desktop 验证**（2026-11-11，Desktop 0.2.2-rc.1）：完全重启 Desktop 加载新版 mirror 后，徽章第二行显示"宿主：linux · HeRenFor · …WSL2"，即 Windows Host 把 probe 的路由转发给了 WSL Host。注意：插件代码更新后，只在插件页关掉再打开不会生效（Node 缓存已加载的模块），必须完全重启 Desktop。
 - **依赖的内部接口**：web server 的 `exact`、`prefixes`、`upgrades` 三个私有 Map；`connection.admit`；`connection/request` 钩子；settings 的 `describe`、`update`、`replace`、`mutate`。每个 DSH 版本都要实测。
 
 ### 实验暴露的缺口

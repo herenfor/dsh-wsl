@@ -10,7 +10,8 @@
 
 - [docs/bridge-plan.md](docs/bridge-plan.md)：桥接方案（传输、部署、按会话分流）。
 - [docs/plugin-management.md](docs/plugin-management.md)：插件管理方式，含界面镜像实验结果。
-- [docs/panel.md](docs/panel.md)：插件管理面板设计（草案）。
+- [docs/panel.md](docs/panel.md)：官方插件页同时管理两边的插件。
+- [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据（调研）。
 
 ## 实验
 

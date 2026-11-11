@@ -15,9 +15,10 @@ import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from 
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
+import { installSessionRouting } from './routing.mjs'
 
 export const name = 'wsl-mirror'
-export const inject = ['clientModules', 'webServer', 'connection', 'settings']
+export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const EVENTS = '/wsl-bridge/events'
 const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-length']
@@ -225,6 +226,13 @@ export async function apply(ctx, config = {}) {
     try { return await handler(req, res, next, ...rest) } catch (error) { ctx.logger.warn('wsl-mirror: %s', error.message); failed(res, body, error) }
   }
 
+  // Each Session runs on this Host or the WSL Host (routing.mjs).
+  const routing = installSessionRouting(ctx, {
+    bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody,
+    available: () => remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release),
+    distro: () => remoteGraph?.distro,
+  })
+
   // Desktop → WSL settings sync for the namespaces both Hosts have (see settings.mjs): on connecting, after this Host
   // writes settings, and once a minute.
   let lastSync = null
@@ -270,7 +278,7 @@ export async function apply(ctx, config = {}) {
     const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && sameRelease(raw.release, remoteGraph.graph.release)
     if (req.headers[INNER] !== undefined) return next()
-    const endpoint = /^\/api\/([A-Za-z]+\/[A-Za-z]+)$/.exec(pathname)?.[1]
+    const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]
     if (!sameVersion && installTarget === 'wsl' && INSTALL_ENDPOINTS.has(endpoint)) {
       // Never fall back to installing on this Host when the person chose WSL.
       let rpcId = null
@@ -282,7 +290,7 @@ export async function apply(ctx, config = {}) {
     }
     if (!sameVersion) return next()
     if (endpoint && PLUGIN_NAMESPACES.has(endpoint.split('/')[0])) return pluginCall(req, res, next, pathname, endpoint)
-    if (method === undefined) return next()
+    if (method === undefined) return endpoint ? routing.call(req, res, next, pathname, endpoint) : next()
     const body = await readBody(req)
     if (method === 'describe') {
       const headers = { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' }

@@ -12,6 +12,7 @@
 - [docs/plugin-management.md](docs/plugin-management.md)：插件管理方式，含界面镜像实验结果。
 - [docs/panel.md](docs/panel.md)：官方插件页同时管理两边的插件。
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据（调研）。
+- [docs/session-routing.md](docs/session-routing.md)：按会话分流，每个任务在 Windows 或 WSL 中运行，侧栏列出两边。
 
 ## 实验
 

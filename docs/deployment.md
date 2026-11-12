@@ -222,4 +222,12 @@
 - 新路由 `/wsl-bridge/mcp`（GET 读、POST 整体替换 WSL 的 `mcp-manager.servers`，带 revision）。
 - 定时任务：WSL 的定时任务 id 在页面上带 `wsl:` 前缀，和会话一样。WSL 端只在 Desktop 开着时运行，所以 WSL 的定时任务也只在那时触发。
 - 顺带：同步时 WSL 端的值如果等于 WSL 的默认值，以前每分钟重写一次 `settings`（revision 一直涨），现在不写了。
-- 验证：单元测试 56 个；`dev/scan/run.sh` 复扫结果记在 `dev/scan/report-2026-11-12.md` 末尾。没有在真实 Windows Desktop 上验证。
+- 验证：单元测试 56 个；`dev/scan/run.sh` 复扫结果记在 `dev/scan/report-2026-11-12.md` 末尾。
+- 真机验证（2026-11-12，所有者的 Windows Desktop + Ubuntu，0.1.9 从 npm 安装）：
+  - 「调优」设为默认后，Windows 新任务的记录里是 `agentPreset: standard`，并且能正常对话；WSL 新任务用的是调优。预设卡片注明了 Windows 任务用什么。改回标准后，`choices.json` 和两边 `cordis.patch.yml` 都是 `standard`。
+  - 在「自动化任务」页手动建一条关联 WSL 文件夹的定时任务，它只出现在 WSL 的 `~/.dsh/storages/schedule.json`（`target.create.cwd` 是 Linux 路径），Windows 那边没有；在页面上删除后，WSL 的数据里也没了。
+  - WSL 标签页的 MCP 编辑框：保存、JSON 写错时的提示都正常；WSL 的 `cordis.patch.yml` 有 `mcp-manager`，Windows 那份没有。
+  - WSL 任务用 @ 引用另一个 WSL 任务，引用记录里是 WSL 端自己的会话 id，模型读到了被引用任务的内容。
+  - `mirror-status.json` 的 `settingsSync.changed` 连续几次都是空的，不再每分钟重写。
+  - 发现一个显示问题：预设说明里加的那句和原描述之间的换行，页面显示成了空格。
+  - 没测：权限预设、模型、搜索服务这几个下拉的合并显示（这台机器上 WSL 独有的选项只有 ds-bot 带的搜索服务 `auto`）。

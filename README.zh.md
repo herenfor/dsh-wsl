@@ -56,7 +56,7 @@ scripts/release.sh 0.1.1 --dry-run   # 跑测试、组装、检查包内容，�
 scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1.1 并推送
 ```
 
-推上去的标签会触发 `.github/workflows/publish.yml`：跑测试，检查标签和版本号一致、包里带的是最新的 WSL 端文件，然后用 npm 的 Trusted Publishing 发布（GitHub 上不存 npm 密钥）。带预发布后缀的版本（如 `0.2.0-beta.1`）发布到 npm 标签 `next`。已安装的插件会从 npm 自动更新。
+推上去的标签会触发 `.github/workflows/publish.yml`：跑测试，检查标签和版本号一致、包里带的是最新的 WSL 端文件，然后用 npm 的 Trusted Publishing 发布（GitHub 上不存 npm 密钥）。带预发布后缀的版本（如 `0.2.0-beta.1`）发布到 npm 标签 `next`。已安装的插件由用户在插件页里更新，不会在后台自动更新。
 
 自动发布要先在 npmjs.com 上 `@herenfor/dsh-wsl` 的设置里添加 Trusted Publisher（GitHub Actions，仓库 `herenfor/dsh-wsl`，工作流 `publish.yml`）。在那之前，或者想在自己电脑上发布时，`npm login` 后运行 `scripts/release.sh <版本> --local`：它先发布，等 npm 上能查到这个版本（npm 要求两步验证确认时，到 npmjs.com 上确认），再提交、打标签并推送。失败时什么都不会改，直接重新运行即可。
 
@@ -69,7 +69,7 @@ scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1
 - [docs/plugin-management.md](docs/plugin-management.md)：插件管理方式和界面镜像。
 - [docs/panel.md](docs/panel.md)：插件页（现在是 Windows 和 WSL 分开的两个标签页）。
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据。
-- [docs/deployment.md](docs/deployment.md)：首次设置、版本规则、插件自动更新、界面语言。
+- [docs/deployment.md](docs/deployment.md)：首次设置、版本规则、插件更新、界面语言。
 
 ## 许可证
 

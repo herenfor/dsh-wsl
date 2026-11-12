@@ -8,7 +8,7 @@
 #   scripts/release.sh <version> --dry-run  test, assemble and show what would be published; changes nothing
 #
 # A version with a pre-release part (0.2.0-beta.1) is published under the npm tag `next`, so `latest` stays on the
-# last release. Installed copies update themselves from npm (selfupdate.mjs).
+# last release. Installed copies are updated by their users from the Plugins page (never in the background).
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"

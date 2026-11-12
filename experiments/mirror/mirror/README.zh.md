@@ -36,7 +36,7 @@
 
 ### 其他安装方式
 
-第 1 步的安装框也接受下面两种写法，但这样装的不会自动更新：
+第 1 步的安装框也接受下面两种写法，但这样装的不能在插件页里更新：
 
 - 从 GitHub 安装：`github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`。指定版本时写成 `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`。
 - 从本地文件夹安装：把仓库下载到 Windows 上，填 `experiments/mirror/mirror` 文件夹的完整路径。
@@ -47,7 +47,7 @@
 
 ## 更新
 
-- 插件本身：发布在 npm 上，用 DSH 自带的插件更新。设置窗口底部会显示插件版本，也可以在那里关闭自动更新。
+- 插件本身：不会在后台自动更新，以免打断正在 WSL 里运行的任务。到「插件 → 已安装 → WSL 运行模式」里检查和更新，最好选在 WSL 里没有任务运行的时候；更新后完全退出并重新打开 Desktop，在那之前侧栏会提示重启。设置窗口底部会显示当前版本。
 - WSL 里的 DSH：版本跟着 Desktop。Desktop 升级后，设置窗口会提示更新 WSL 端。
 
 ## 卸载

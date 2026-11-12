@@ -36,7 +36,7 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 
 ### Other ways to install
 
-The install box in step 1 also takes these, but a plugin installed this way does not update itself:
+The install box in step 1 also takes these, but a plugin installed this way cannot be updated from the Plugins page:
 
 - From GitHub: `github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`, or for a given version `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`.
 - From a local folder: download the repository to Windows and enter the full path of its `experiments/mirror/mirror` folder.
@@ -47,7 +47,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 
 ## Updates
 
-- The plugin itself: published on npm and updated by DSH's own plugin updates. The bottom of the setup window shows its version and lets you turn automatic updates off.
+- The plugin itself never updates in the background, which could cut off WSL tasks that are running. Check for and install updates under Plugins → Installed → WSL run mode, at a moment when no WSL task is running, then quit Desktop completely and open it again; until then the sidebar asks for the restart. The bottom of the setup window shows the installed version.
 - The DSH in WSL follows Desktop's version. After Desktop updates, the setup window offers to update the WSL side.
 
 ## Uninstall

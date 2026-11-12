@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
         setupNoWsl: '这台电脑没有安装 WSL', setupNoDistro: 'WSL 里还没有 Linux 发行版', setupWsl1: '这个发行版是 WSL 1，需要 WSL 2', setupChoose: '还没有选择在 WSL 里怎么运行 DSH',
         setupNeedsDsh: 'WSL 里还没有装 DSH', setupVersionMismatch: 'WSL 里的 DSH 版本较旧，需要更新', setupDesktopOutdated: 'Desktop 版本较旧，需要先升级 Desktop',
         setupInstalling: '正在安装 WSL 端的 DSH…', setupChecking: '正在检查 WSL…', setupStarting: '正在启动 WSL 端…', setupError: 'WSL 端启动失败', setupConnected: '已连接', setupRestart: '完全退出并重新打开 Desktop 后生效',
-        statusRestart: 'WSL 运行模式：重启 Desktop 后生效', restartBody: 'WSL 运行模式是在 Desktop 运行时装上（或打开）的，要完全退出并重新打开 Desktop 后才会开始工作。', restartNote: '关闭窗口后，如果 Desktop 还在系统托盘里运行，也要在托盘里退出。等 5 秒以上再打开。',
+        statusRestart: 'WSL 运行模式：重启 Desktop 后生效', restartBody: 'WSL 运行模式是在 Desktop 运行时装上、更新或打开的，要完全退出并重新打开 Desktop 后才会开始工作。', restartNote: '关闭窗口后，如果 Desktop 还在系统托盘里运行，也要在托盘里退出。等 5 秒以上再打开。',
         copy: '复制', copied: '已复制', current: '当前',
         modeAskOwn: 'WSL 里已经装了 DSH {version}。Desktop 在 WSL 里运行任务时，用哪一份？', modeAsk: 'Desktop 在 WSL 里运行任务时，用哪一份 DSH？',
         reuseTitle: '复用你装的 dsh（{version}）', reuseSync: '会话同步：Desktop 里在 WSL 运行的任务，和你在 WSL 里自己用 dsh 时是同一份数据，任务记录、文件夹列表、插件互相都看得到。',
@@ -44,9 +44,7 @@ window.__ModuleLoader__.load({
         connectedBody: '已连接：WSL（{distro}）中的 DSH {version}。现在可以在输入框下方把运行位置切换到 {distro}。', driftOlder: '两边版本略有不同（Desktop {desktop}，WSL {wsl}），可以正常使用。',
         updateWslTo: '更新 WSL 到 {version}', driftNewer: 'WSL 的 DSH（{wsl}）比 Desktop（{desktop}）新一些，可以正常使用；建议升级 Desktop。', lastInstallFailed: '上次安装没有成功：',
         runMode: '运行方式：{mode}', runModeReuse: '复用你装的 dsh（会话同步）', runModePrivate: '插件专用一份（会话不同步）', change: '更改',
-        updWaiting: '启动约一分钟后检查更新', updOff: '自动更新已关闭', updChecking: '正在检查更新…', updNotUpdatable: '从本地文件夹或 Git 地址安装，不会自动更新', updLatest: '已是最新',
-        updUpdating: '正在更新到 {version}…', updUpdated: '已更新到 {version}', updRestart: '已更新到 {version}，重启 Desktop 后生效', updFailed: '检查更新失败：{error}',
-        pluginLine: '插件 {name} {version} · {status}', checkUpdates: '检查更新', autoUpdateOff: '关闭自动更新', autoUpdateOn: '打开自动更新', distroLabel: '发行版',
+        pluginLine: '插件 {name} {version} · 在「插件 → 已安装」里检查和更新（更新后重启 Desktop 生效）', distroLabel: '发行版',
         setupTitle: '设置 WSL 运行环境', checkingButton: '检查中…', recheck: '重新检查', done: '完成', close: '关闭',
         cannotRead: '无法读取', createFailed: '新建失败', browserTitle: '选择 WSL 文件夹（{distro}）', showHidden: '显示隐藏文件夹', newFolder: '新建文件夹', cancel: '取消',
         adding: '添加中…', chooseThis: '选择此文件夹', home: '回到主目录', folderName: '文件夹名称', create: '创建', loading: '加载中…', noSubfolders: '没有子文件夹',
@@ -75,7 +73,7 @@ window.__ModuleLoader__.load({
         setupNoWsl: 'WSL is not installed on this computer', setupNoDistro: 'WSL has no Linux distribution yet', setupWsl1: 'This distribution runs on WSL 1; WSL 2 is needed', setupChoose: 'How DSH runs in WSL is not chosen yet',
         setupNeedsDsh: 'DSH is not installed in WSL yet', setupVersionMismatch: 'The DSH in WSL is too old and needs an update', setupDesktopOutdated: 'Desktop is too old; update Desktop first',
         setupInstalling: 'Installing DSH in WSL…', setupChecking: 'Checking WSL…', setupStarting: 'Starting the WSL side…', setupError: 'The WSL side failed to start', setupConnected: 'Connected', setupRestart: 'quit Desktop completely and open it again to start using it',
-        statusRestart: 'WSL run mode: restart Desktop to start', restartBody: 'WSL run mode was installed (or switched on) while Desktop was running. It starts working once you quit Desktop completely and open it again.', restartNote: 'If Desktop keeps running in the system tray after you close its window, quit it there too. Wait at least 5 seconds before opening it again.',
+        statusRestart: 'WSL run mode: restart Desktop to start', restartBody: 'WSL run mode was installed, updated or switched on while Desktop was running. It starts working once you quit Desktop completely and open it again.', restartNote: 'If Desktop keeps running in the system tray after you close its window, quit it there too. Wait at least 5 seconds before opening it again.',
         copy: 'Copy', copied: 'Copied', current: 'Current',
         modeAskOwn: 'DSH {version} is already installed in WSL. Which copy should Desktop use to run tasks in WSL?', modeAsk: 'Which DSH should Desktop use to run tasks in WSL?',
         reuseTitle: 'Reuse your dsh ({version})', reuseSync: 'Sessions shared: tasks Desktop runs in WSL use the same data as the dsh you run in WSL yourself, so tasks, folders and plugins show up on both.',
@@ -96,9 +94,7 @@ window.__ModuleLoader__.load({
         connectedBody: 'Connected: DSH {version} in WSL ({distro}). You can now switch the run location under the input box to {distro}.', driftOlder: 'The versions differ slightly (Desktop {desktop}, WSL {wsl}); everything works.',
         updateWslTo: 'Update WSL to {version}', driftNewer: 'The DSH in WSL ({wsl}) is a little newer than Desktop ({desktop}); everything works, but updating Desktop is recommended.', lastInstallFailed: 'The last install did not succeed: ',
         runMode: 'Run mode: {mode}', runModeReuse: 'reuse your dsh (sessions shared)', runModePrivate: "the plugin's own copy (sessions not shared)", change: 'Change',
-        updWaiting: 'Checks for updates about a minute after start', updOff: 'Automatic updates are off', updChecking: 'Checking for updates…', updNotUpdatable: 'Installed from a local folder or Git URL, so it does not update automatically', updLatest: 'Up to date',
-        updUpdating: 'Updating to {version}…', updUpdated: 'Updated to {version}', updRestart: 'Updated to {version}; restart Desktop to use it', updFailed: 'Update check failed: {error}',
-        pluginLine: 'Plugin {name} {version} · {status}', checkUpdates: 'Check for updates', autoUpdateOff: 'Turn off automatic updates', autoUpdateOn: 'Turn on automatic updates', distroLabel: 'Distribution',
+        pluginLine: 'Plugin {name} {version} · check for and install updates under Plugins → Installed (restart Desktop afterwards)', distroLabel: 'Distribution',
         setupTitle: 'Set up the WSL environment', checkingButton: 'Checking…', recheck: 'Check again', done: 'Done', close: 'Close',
         cannotRead: 'Cannot read this folder', createFailed: 'Could not create the folder', browserTitle: 'Choose a WSL folder ({distro})', showHidden: 'Show hidden folders', newFolder: 'New folder', cancel: 'Cancel',
         adding: 'Adding…', chooseThis: 'Choose this folder', home: 'Home folder', folderName: 'Folder name', create: 'Create', loading: 'Loading…', noSubfolders: 'No subfolders',
@@ -446,17 +442,8 @@ window.__ModuleLoader__.load({
         if (s.job && !s.job.running && s.job.code !== 0 && s.state !== 'installing') body.push(para(t('lastInstallFailed'), s.job.error ?? ''), s.job.log ? h(CodeBlock, { text: s.job.log }) : null)
         if (s.mode && !choosing && s.state !== 'choose' && !s.dev) body.push(row(note(t('runMode', { mode: t(s.mode === 'reuse' ? 'runModeReuse' : 'runModePrivate') })),
           h('button', { type: 'button', onClick: () => setChoosing(true), style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, t('change'))))
-        if (s.plugin) {
-          const p = s.plugin
-          const key = { waiting: 'updWaiting', off: 'updOff', checking: 'updChecking', 'not-updatable': 'updNotUpdatable', 'up-to-date': 'updLatest',
-            updating: 'updUpdating', updated: 'updUpdated', 'restart-required': 'updRestart', failed: 'updFailed' }[p.status]
-          const said = key ? t(key, { version: p.latest, error: p.error ?? '' }) : ''
-          const link = (label, onClick) => h('button', { type: 'button', onClick, disabled: busy, style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, label)
-          body.push(h('div', { style: { height: 1, background: BORDER } }),
-            row(note(t('pluginLine', { name: p.name, version: p.version, status: said })),
-              p.auto && p.status !== 'not-updatable' ? link(t('checkUpdates'), () => void load({ action: 'check-plugin' })) : null,
-              link(t(p.auto ? 'autoUpdateOff' : 'autoUpdateOn'), () => void load({ autoUpdate: !p.auto }))))
-        }
+        // The plugin is updated from the Plugins page, when the person chooses: never in the background.
+        if (s.plugin) body.push(h('div', { style: { height: 1, background: BORDER } }), note(t('pluginLine', { name: s.plugin.name, version: s.plugin.version })))
         if (s.distros?.length > 1) body.push(h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } }, t('distroLabel'),
           h('select', { value: distro, disabled: busy || s.state === 'installing', onChange: (e) => void load({ distro: e.target.value }), style: { padding: '4px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit' } },
             ...s.distros.map((d) => h('option', { key: d, value: d }, d)))))

@@ -57,7 +57,7 @@ scripts/release.sh 0.1.1 --dry-run   # tests, assembles, checks the package cont
 scripts/release.sh 0.1.1             # then sets the version, commits, tags v0.1.1 and pushes
 ```
 
-The pushed tag starts `.github/workflows/publish.yml`, which runs the tests, checks that the tag matches the version and that the package carries the current bridge files, and publishes to npm with npm trusted publishing (no npm token stored in GitHub). A version with a pre-release part (`0.2.0-beta.1`) goes to the npm tag `next`. Installed copies update themselves from npm.
+The pushed tag starts `.github/workflows/publish.yml`, which runs the tests, checks that the tag matches the version and that the package carries the current bridge files, and publishes to npm with npm trusted publishing (no npm token stored in GitHub). A version with a pre-release part (`0.2.0-beta.1`) goes to the npm tag `next`. Installed copies are updated by their users from the Plugins page; nothing updates in the background.
 
 The workflow publishes only once the package's trusted publisher is set on npmjs.com (settings of `@herenfor/dsh-wsl`: GitHub Actions, repository `herenfor/dsh-wsl`, workflow `publish.yml`). Until then, or to publish from your own machine, use `scripts/release.sh <version> --local` after `npm login`: it publishes, waits until the version is live (approve it on npmjs.com if npm staged it for 2FA approval), then commits, tags and pushes. A failed run changes nothing and can simply be run again.
 

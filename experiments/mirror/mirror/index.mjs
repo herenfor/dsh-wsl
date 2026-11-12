@@ -21,7 +21,6 @@ import { installSessionRouting } from './routing.mjs'
 import { translateLoose } from './ids.mjs'
 import { check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
 import { noteLanguage, language, pick } from './language.mjs'
-import { installSelfUpdate } from './selfupdate.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
@@ -48,15 +47,21 @@ function readBridgeConfig(config) {
 }
 const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return {} } }
 
-// Installed or switched on while Desktop runs: the page and its streams were opened before this plugin could route
-// them, so it would half work (WSL folders without their tasks, a composer that stays grey). Such a load takes over
-// nothing and asks for a restart instead. Only the first load in the process decides: a plugin that came up with the
-// Desktop and is loaded again later (a service it uses restarted) works as before.
+// Installed, updated or switched on while Desktop runs: the page and its streams were opened before this plugin could
+// route them, so it would half work (WSL folders without their tasks, a composer that stays grey). Such a load takes
+// over nothing and asks for a restart instead. The first load in the process decides, and a load of another version
+// (an update from the Plugins page) asks for a restart too; a plugin that came up with the Desktop and is loaded again
+// at the same version (a service it uses restarted) works as before.
 const HOT_LOAD_SECONDS = Number(process.env.DSH_WSL_HOT_LOAD_SECONDS ?? 60)
+const OWN_VERSION = readJson(join(PLUGIN_DIR, 'package.json')).version
+export function loadKind(seen, version, uptime, hotSeconds = HOT_LOAD_SECONDS) {
+  if (seen === undefined) return { mode: uptime > hotSeconds ? 'restart-required' : 'boot', version }
+  if (seen.mode === 'restart-required' || seen.version !== version) return { mode: 'restart-required', version: seen.version }
+  return seen
+}
 function loadedWhileRunning() {
-  const seen = globalThis.__dshWslLoad
-  if (seen === undefined) globalThis.__dshWslLoad = process.uptime() > HOT_LOAD_SECONDS ? 'restart-required' : 'boot'
-  return globalThis.__dshWslLoad === 'restart-required'
+  globalThis.__dshWslLoad = loadKind(globalThis.__dshWslLoad, OWN_VERSION, process.uptime())
+  return globalThis.__dshWslLoad.mode === 'restart-required'
 }
 
 /** The plugin when it needs a Desktop restart: its routes say so and nothing else is touched (no WSL, no routing). */
@@ -360,7 +365,7 @@ export async function apply(ctx, config = {}) {
       drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,
       desktopVersion, installed: s.installed ?? wslVersion, wslVersion,
       commands: commandsFor(s, desktopVersion, language()), prompt: promptFor(s, desktopVersion, language()), canInstall: !!s.script && !s.dev, probeError: s.probeError ?? null,
-      plugin: selfUpdate.state(),
+      plugin: { name: own.name, version: own.version },
       job: job ? { running: job.running, log: job.log.slice(-12).join('\n'), code: job.code ?? null, error: job.failure === 'not-published' ? pick({ zh: `npm 上还没有 @deepseek-ai/dsh@${job.version}，要等它发布后再装。`, en: `@deepseek-ai/dsh@${job.version} is not on npm yet; install it once it is published.` })
         : job.failure === 'network' ? pick({ zh: '网络连接失败，可以稍后重试。', en: 'The network connection failed; try again later.' })
           : job.failure === 'exit' ? pick({ zh: `安装失败（退出码 ${job.code}）`, en: `The install failed (exit code ${job.code})` }) : job.error ?? null } : null,
@@ -368,13 +373,9 @@ export async function apply(ctx, config = {}) {
       log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
     }
   }
-  // This plugin's own updates (selfupdate.mjs).
+  // This plugin's own version, for the setup window. It is updated only from the Plugins page, by the person: an
+  // update in the background could cut off the WSL tasks running at that moment.
   const own = readJson(join(PLUGIN_DIR, 'package.json'))
-  const selfUpdate = installSelfUpdate(ctx, {
-    name: own.name, version: own.version,
-    auto: () => readJson(CONFIG_FILE).autoUpdate !== false,
-    log: (m) => ctx.logger.info('wsl-mirror: %s', m),
-  })
 
   // The install/update button: runs setup's script in WSL (it stops the daemon first, then installs or updates DSH).
   // Only on the person's click; the bridge stays down meanwhile and connects again when it is done.
@@ -434,11 +435,6 @@ export async function apply(ctx, config = {}) {
           // Another DSH and another DSH home: the daemon is replaced on the next connect.
           remember({ mode: body.mode })
           await resolveBridge(); bridge.restart()
-        } else if (typeof body.autoUpdate === 'boolean') {
-          remember({ autoUpdate: body.autoUpdate })
-          if (body.autoUpdate) void selfUpdate.check()
-        } else if (body.action === 'check-plugin') {
-          await selfUpdate.check()
         } else if (body.action === 'install') {
           startInstall()
         } else if (body.action === 'recheck') {

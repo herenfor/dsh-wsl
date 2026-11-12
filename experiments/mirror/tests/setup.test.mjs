@@ -113,20 +113,15 @@ test('bridge files are copied once per content stamp', () => {
   assert.equal(hostPathOf('linux', 'Ubuntu', '/home/s'), '/home/s')
 })
 
-test('plugin updates: newest compatible, not deprecated, releases only unless on a prerelease', async () => {
-  const { pickUpdate } = await import('../mirror/selfupdate.mjs')
-  const v = (version, extra = {}) => ({ version, tags: [], prerelease: /-/.test(version), bundle: true, ...extra })
-  const list = { status: 'listed', versions: [v('0.4.0', { incompatible: { range: '>=0.3' } }), v('0.3.1-rc.1'), v('0.3.0', { deprecated: 'broken' }), v('0.2.9'), v('0.2.8')] }
-  assert.equal(pickUpdate(list, '0.2.5').version, '0.2.9')
-  assert.equal(pickUpdate(list, '0.2.5-rc.1').version, '0.3.1-rc.1')
-  assert.equal(pickUpdate({ status: 'listed', versions: [v('0.5.0', { bundle: false })] }, '0.2.5'), undefined)
-  assert.equal(pickUpdate({ status: 'refused' }, '0.2.5'), undefined)
-  const { updateKind } = await import('../mirror/selfupdate.mjs')
-  assert.equal(updateKind({ updatable: true }), 'registry')     // DSH 0.2.2-rc.1
-  assert.equal(updateKind({ updatable: false }), undefined)
-  assert.equal(updateKind({ update: 'registry' }), 'registry')  // 0.2.2-rc.2
-  assert.equal(updateKind({ update: 'git' }), 'git')
-  assert.equal(updateKind({}), undefined)
+test('a load while Desktop runs, or of another version, asks for a restart; a reload at the boot version does not', async () => {
+  const { loadKind } = await import('../mirror/index.mjs')
+  const boot = loadKind(undefined, '0.1.1', 5, 60)
+  assert.deepEqual(boot, { mode: 'boot', version: '0.1.1' })
+  assert.equal(loadKind(boot, '0.1.1', 900, 60).mode, 'boot')                 // a service it uses restarted
+  assert.equal(loadKind(boot, '0.1.2', 900, 60).mode, 'restart-required')     // updated from the Plugins page
+  const hot = loadKind(undefined, '0.1.1', 900, 60)                            // installed mid-session
+  assert.equal(hot.mode, 'restart-required')
+  assert.equal(loadKind(hot, '0.1.1', 950, 60).mode, 'restart-required')      // stays so until Desktop restarts
 })
 
 test('text the Host writes follows the page language: by id, then base language, then English', async () => {

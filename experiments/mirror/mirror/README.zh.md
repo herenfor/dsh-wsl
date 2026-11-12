@@ -4,7 +4,7 @@
 
 让 Windows 版 DeepSeek Harness（Desktop）在 WSL 里运行任务。选了 WSL 的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。
 
-> 测试版。目前只在 DSH 0.2.2-rc.1 上测试过。遇到问题欢迎到 [GitHub](https://github.com/herenfor/dsh-wsl/issues) 反馈。
+> 测试版。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。遇到问题欢迎到 [GitHub](https://github.com/herenfor/dsh-wsl/issues) 反馈。
 
 ## 能做什么
 
@@ -67,7 +67,7 @@
 
 ## 已知限制
 
-- 只在 DSH 0.2.2-rc.1 上测试过。Desktop 和 WSL 里的 DSH，版本号前两段必须相同。
+- 只在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。Desktop 和 WSL 里的 DSH，版本号前两段必须相同。
 - 插件专用模式下，WSL 的任务和你自己的 dsh 不互通，目前也不能在两种方式之间搬任务。
 - 复用你的 dsh 时，插件直接用 Node 运行那份 DSH 包，数据在 `~/.dsh`；不经过你自己的启动脚本或包装器，那里设置的环境变量、端口、`DSH_HOME` 都不会生效。
 - WSL 里的插件如果用补丁改了官方组件的配置（而不是关掉它），这个改动在 Desktop 窗口里不生效。

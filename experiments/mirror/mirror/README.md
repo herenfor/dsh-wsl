@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window.
 
-> Beta. Tested only with DSH 0.2.2-rc.1 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
+> Beta. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
 
 ## What it does
 
@@ -67,7 +67,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 
 ## Known limitations
 
-- Tested only with DSH 0.2.2-rc.1. Desktop and the DSH in WSL must match in the first two parts of their versions.
+- Tested only with DSH 0.2.2-rc.1 and 0.2.2-rc.2. Desktop and the DSH in WSL must match in the first two parts of their versions.
 - In the separate-copy mode, WSL tasks are not shared with your own dsh, and tasks cannot be moved between the two ways yet.
 - Reusing your dsh runs its package directly with Node, with its data in `~/.dsh`. It does not go through launch scripts or wrappers of your own: environment variables, ports or a `DSH_HOME` set there are not applied.
 - When a WSL plugin's patch changes the configuration of an official component (rather than switching it off), that change does not apply in the Desktop window.

@@ -6,7 +6,7 @@ A **WSL run mode** for DeepSeek Harness Desktop on Windows: each task can run in
 
 Built only from plugins and external components; no official code is changed.
 
-Status: beta, published on npm as `@herenfor/dsh-wsl`. Tested only with DSH 0.2.2-rc.1 so far.
+Status: beta, published on npm as `@herenfor/dsh-wsl`. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far.
 
 ## Use
 

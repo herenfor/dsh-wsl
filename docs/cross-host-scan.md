@@ -43,4 +43,4 @@
 - [x] 设置字段的引用分析（`dev/scan/summary.mjs`，schema 编号归一化后比较）。
 - [x] 动态试写，全部还原（`dev/scan/dynamic.mjs`：默认预设、权限预设、模型、搜索服务、WSL 任务的定时任务）。
 - [x] 报告：[dev/scan/report-2026-11-12.md](../dev/scan/report-2026-11-12.md)。一键重跑：`dev/scan/run.sh`。
-- [ ] 和所有者一起定每一类的兼容规则（报告最后一节 A–D），再改代码。
+- [ ] 和所有者一起定每一类的兼容规则，再改代码。逐条解释和成熟项目对照：[docs/cross-host-rules.md](cross-host-rules.md)。

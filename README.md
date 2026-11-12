@@ -50,7 +50,9 @@ Desktop (DSH Host + page)                       DSH Host (profile desktop-wsl)
 | `scripts/assemble.sh` | Copies transport and agent into the plugin package |
 | `.github/workflows/publish.yml` | Publishes to npm when a version tag is pushed |
 | `scripts/sync-windows.sh` | Development: assembles, then copies the package into a Windows test folder |
+| `dev/` | Test environment for development: a `dsh web` on Linux standing in for Desktop, a fake `wsl.exe`, screenshot tools; see [dev/README.md](dev/README.md) (in Chinese) |
 | `docs/` | Design and experiment notes (in Chinese) |
+| `CLAUDE.md` | For an agent taking over: status, entry points, rules (in Chinese) |
 
 ## Development
 
@@ -69,7 +71,7 @@ The pushed tag starts `.github/workflows/publish.yml`, which runs the tests, che
 
 The workflow publishes only once the package's trusted publisher is set on npmjs.com (settings of `@herenfor/dsh-wsl`: GitHub Actions, repository `herenfor/dsh-wsl`, workflow `publish.yml`). Until then, or to publish from your own machine, use `scripts/release.sh <version> --local` after `npm login`: it publishes, waits until the version is live (approve it on npmjs.com if npm staged it for 2FA approval), then commits, tags and pushes. A failed run changes nothing and can simply be run again.
 
-`scripts/assemble.sh` copies the latest `experiments/transport` and `experiments/mirror/agent` files into the package; the release script runs it. `scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder that a Desktop links to.
+`scripts/assemble.sh` copies the latest `experiments/transport` and `experiments/mirror/agent` files into the package; the release script runs it. `scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder you name, which a Desktop links to. For end-to-end tests the test environment in `dev/` is usually enough.
 
 ## Documents (in Chinese)
 

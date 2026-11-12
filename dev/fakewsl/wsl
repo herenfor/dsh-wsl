@@ -1,0 +1,11 @@
+#!/bin/bash
+# Fake wsl.exe for the test Desktop: one distribution "Ubuntu" running on this Linux machine with home $FAKE_HOME.
+# The plugin calls it as `wsl.exe -d <distro> --exec <command…>` and `wsl.exe --list` (UTF-16, like the real one).
+# FAKE_PATH, when set, replaces PATH inside the "distribution" (e.g. to test a machine with only an older Node).
+if [ "$1" = "--list" ]; then printf '  NAME      STATE           VERSION\r\n* Ubuntu    Running         2\r\n' | iconv -f UTF-8 -t UTF-16LE; exit 0; fi
+[ "$1" = "-d" ] && shift 2
+[ "$1" = "--exec" ] && shift
+[ "$1" = "--" ] && shift
+[ -n "$FAKE_PATH" ] && export PATH="$FAKE_PATH"
+export HOME="$FAKE_HOME" WSL_DISTRO_NAME=Ubuntu npm_config_cache="${REAL_HOME:-$HOME}/.npm"
+exec "$@"

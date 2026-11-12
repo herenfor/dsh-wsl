@@ -49,7 +49,9 @@ Desktop（DSH Host + 页面）                 DSH Host（profile desktop-wsl）
 | `scripts/assemble.sh` | 把 transport 和 agent 拷进插件包 |
 | `.github/workflows/publish.yml` | 推送版本标签时发布到 npm |
 | `scripts/sync-windows.sh` | 开发用：组装后再拷到 Windows 测试目录 |
+| `dev/` | 开发用测试环境：Linux 上的 `dsh web` 冒充 Desktop、假 `wsl.exe`、截图工具，见 [dev/README.md](dev/README.md) |
 | `docs/` | 设计和实验记录（中文） |
+| `CLAUDE.md` | 给接手的 agent：状态、代码入口、规则 |
 
 ## 开发
 
@@ -68,7 +70,7 @@ scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1
 
 自动发布要先在 npmjs.com 上 `@herenfor/dsh-wsl` 的设置里添加 Trusted Publisher（GitHub Actions，仓库 `herenfor/dsh-wsl`，工作流 `publish.yml`）。在那之前，或者想在自己电脑上发布时，`npm login` 后运行 `scripts/release.sh <版本> --local`：它先发布，等 npm 上能查到这个版本（npm 要求两步验证确认时，到 npmjs.com 上确认），再提交、打标签并推送。失败时什么都不会改，直接重新运行即可。
 
-`scripts/assemble.sh` 把 `experiments/transport` 和 `experiments/mirror/agent` 的最新文件拷进插件包，发布脚本会自动运行它。`scripts/sync-windows.sh` 是开发用的：它还会把插件包拷到 Desktop 用 link 安装的 Windows 测试目录。
+`scripts/assemble.sh` 把 `experiments/transport` 和 `experiments/mirror/agent` 的最新文件拷进插件包，发布脚本会自动运行它。`scripts/sync-windows.sh` 是开发用的：它还会把插件包拷到你指定的、某个 Desktop 用 link 安装的 Windows 测试目录。端到端测试一般用 `dev/` 的测试环境就够了。
 
 ## 文档
 

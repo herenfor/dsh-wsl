@@ -19,6 +19,7 @@ import { wslBundles, wslBundlePage } from './plugins.mjs'
 import { toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { translateLoose } from './ids.mjs'
+import { builtinRoot, isBuiltin } from './agent/index.mjs'
 import { check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
 import { noteLanguage, language, pick } from './language.mjs'
 
@@ -549,11 +550,15 @@ export async function apply(ctx, config = {}) {
   let raw = reg.composed
   let remoteGraph
   const availability = new EventTarget()   // "change" when the WSL Host comes or goes (routing waits on it)
+  // This Host's own official rows, which no WSL row replaces.
+  const localRoot = builtinRoot(reg.clientPath(MODULES_ID))
+  const builtinHere = () => new Set(raw.entries.filter((row) => { try { return isBuiltin(reg.clientPath(row.id), localRoot) } catch { return false } }).map((row) => row.id))
   let state = mergeGraphs(raw, undefined, orderByModuleGraph)
   const recompute = () => {
-    state = mergeGraphs(raw, remoteGraph, orderByModuleGraph)
+    state = mergeGraphs(raw, remoteGraph, orderByModuleGraph, builtinHere())
     syncRoutes()
-    writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], dropped: [...(state.dropped ?? [])], routes: [...forwarded.keys()], reason: state.reason })
+    if (state.kept?.size) ctx.logger.warn('wsl-mirror: the WSL side calls %d official rows its own; kept this Host\'s: %s', state.kept.size, [...state.kept].slice(0, 5).join(', '))
+    writeStatus({ local: raw.release, remote: remoteGraph?.graph.release, mirrored: [...state.mirrored.keys()], dropped: [...(state.dropped ?? [])], kept: [...(state.kept ?? [])], routes: [...forwarded.keys()], reason: state.reason })
     ctx.logger.info('wsl-mirror: %d mirrored rows%s', state.mirrored.size, state.reason ? ` (${state.reason})` : `: ${[...state.mirrored.keys()].join(', ')}`)
   }
   const originalFetch = reg.fetchBundle

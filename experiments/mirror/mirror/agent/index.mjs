@@ -4,7 +4,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { dirname, join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { BrokerClient, brokerCredentials } from './broker.mjs'
 
 export const name = 'wsl-agent'
@@ -14,11 +14,19 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
 const real = (p) => { try { return realpathSync(p) } catch { return p } }
 
-// The node_modules directory the DSH installation keeps its own packages in, found from the client-modules bundle:
-// <root>/@deepseek-ai/dsh-client-modules/lib/client.js
+// The directory the DSH installation keeps its own packages in, found from the client-modules bundle:
+//   npm (hoisted):  <root>/@deepseek-ai/dsh-client-modules/lib/client.js
+//   pnpm:           <root>/.pnpm/@deepseek-ai+dsh-client-modules@<version>/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
+// Counting four levels up suits only the first: under pnpm (a dsh installed with the dsh CLI) it stopped at the one
+// package's store folder, every other official bundle counted as the person's own, and Desktop replaced its whole
+// UI with the WSL side's (0.1.4 and earlier: a blank window).
 export function builtinRoot(modulesClientPath) {
-  return dirname(dirname(dirname(dirname(real(modulesClientPath)))))
+  const file = real(modulesClientPath)
+  for (let dir = dirname(file); dirname(dir) !== dir; dir = dirname(dir)) if (basename(dir) === '.pnpm') return dirname(dir)
+  return dirname(dirname(dirname(dirname(file))))
 }
+/** A client path belongs to the DSH installation under `root`. */
+export const isBuiltin = (path, root) => path !== undefined && real(path).startsWith(root + sep)
 
 // The WSL Host's HTTP route table (path names only), read from the web server's private maps, and the exact Fetch
 // routes plugins register under /api (`ctx.connection.fetch.register`, e.g. DS Bot's /api/bot), with their methods.
@@ -75,14 +83,15 @@ export function snapshot(cm, root, ws, connection, disabled) {
   const origin = {}
   for (const row of graph.entries) {
     const path = cm.clientPath(row.id)
-    origin[row.id] = path !== undefined && real(path).startsWith(root + sep) ? 'builtin' : 'user'
+    origin[row.id] = isBuiltin(path, root) ? 'builtin' : 'user'
   }
   return { graph, origin, routes: ws ? routeTable(ws, connection) : undefined, disabled, distro: process.env.WSL_DISTRO_NAME }
 }
 
 export function apply(ctx) {
   const cm = ctx.clientModules
-  const root = builtinRoot(cm.clientPath(MODULES_ID))
+  const modulesClient = cm.clientPath(MODULES_ID)
+  const root = builtinRoot(modulesClient)
   const clients = new Set()
   const connection = () => { try { return ctx.get('connection') } catch { return undefined } }
   // Official entries that WSL plugins' bundle patches switch off: Desktop drops their client rows from the page too.
@@ -90,7 +99,13 @@ export function apply(ctx) {
   try {
     // DSH's own `!!js` expressions (a `disabled:` decided at run time) are kept as opaque values: they are not the literal
     // `disabled: true` looked for here, and leaving the tag unknown printed a YAML warning on every read.
-    const { parse } = createRequire(join(root, 'wsl-agent.js'))('yaml')
+    // Resolved from the client-modules package itself: under pnpm only a package's own folder sees its dependencies.
+    let parse
+    for (const base of [real(modulesClient), process.argv[1], join(root, 'wsl-agent.js')]) {
+      if (typeof base !== 'string') continue
+      try { ({ parse } = createRequire(base)('yaml')); break } catch {}
+    }
+    if (parse === undefined) throw new Error('yaml cannot be resolved from the DSH installation')
     const customTags = [{ tag: 'tag:yaml.org,2002:js', resolve: (source) => ({ $js: source }) }]
     parseYaml = (text) => parse(text, { customTags })
   } catch (error) { ctx.logger.warn('wsl-agent: no YAML parser: %s', error.message) }

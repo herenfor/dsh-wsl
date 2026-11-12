@@ -155,3 +155,41 @@ test('wslBundlePage joins a bundle\'s rows with the WSL Host\'s live entries', a
   assert.equal(wslBundlePage(bundles, plugins, 'dsh-wsl-agent'), undefined)
   assert.equal(wslBundlePage(bundles, plugins, 'nope'), undefined)
 })
+
+test('the DSH installation root, for npm (hoisted), npm global and pnpm (the dsh CLI) layouts', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { builtinRoot, isBuiltin } = await import('../agent/index.mjs')
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-wsl-root-')))
+  const file = (p) => { mkdirSync(join(p, '..'), { recursive: true }); writeFileSync(p, ''); return p }
+  // npm: <install>/node_modules/@deepseek-ai/<name>/lib/client.js
+  const npm = join(base, 'npm', 'node_modules')
+  assert.equal(builtinRoot(file(join(npm, '@deepseek-ai/dsh-client-modules/lib/client.js'))), npm)
+  // pnpm: every package in its own store folder; node_modules/@deepseek-ai/<name> are links into it
+  const pnpm = join(base, 'dsh-cli', 'node_modules')
+  const store = (name) => join(pnpm, '.pnpm', `@deepseek-ai+${name}@0.2.2-rc.2_abc`, 'node_modules', '@deepseek-ai', name)
+  const modules = file(join(store('dsh-client-modules'), 'lib/client.js'))
+  const chat = file(join(store('dsh-client-ui-chat'), 'lib/client.js'))
+  mkdirSync(join(pnpm, '@deepseek-ai'), { recursive: true })
+  symlinkSync(store('dsh-client-modules'), join(pnpm, '@deepseek-ai', 'dsh-client-modules'))
+  const root = builtinRoot(join(pnpm, '@deepseek-ai/dsh-client-modules/lib/client.js'))
+  assert.equal(root, pnpm)
+  assert.equal(isBuiltin(chat, root), true)                     // 0.1.4 and earlier: false, so 'user'
+  assert.equal(isBuiltin(modules, root), true)
+  const plugin = file(join(base, 'home/.dsh/profiles/desktop-wsl/node_modules/ds-bot/lib/client.js'))
+  assert.equal(isBuiltin(plugin, root), false)
+  assert.equal(isBuiltin(undefined, root), false)
+})
+
+test('official rows of this Host are never replaced, whatever the WSL side calls them', () => {
+  // The WSL side of 0.1.4 called every official row its own under pnpm, and the whole window became its UI.
+  const wrong = { ...remote, origin: { '@deepseek-ai/dsh-client-modules': 'user', '@deepseek-ai/dsh-client-ui-chat': 'user', 'dsh-sentinel': 'user' } }
+  const here = new Set(['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat', '@deepseek-ai/dsh-client-ui-tool'])
+  const { graph, mirrored, kept } = mergeGraphs(local, wrong, order, here)
+  assert.deepEqual([...mirrored.keys()], ['dsh-sentinel'])
+  assert.deepEqual([...kept].sort(), ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat'])
+  assert.deepEqual(graph.entries.map((r) => `${r.id}@${r.rev}`), ['@deepseek-ai/dsh-client-modules@m', '@deepseek-ai/dsh-client-ui-chat@a1', '@deepseek-ai/dsh-client-ui-tool@a2', 'dsh-sentinel@s'])
+  // A plugin of the person's own on both sides still comes from WSL (not part of this Host's DSH).
+  assert.deepEqual([...mergeGraphs(local, remote, order, new Set(['@deepseek-ai/dsh-client-modules'])).mirrored.keys()], ['@deepseek-ai/dsh-client-ui-chat', 'dsh-sentinel'])
+})

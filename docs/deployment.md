@@ -178,3 +178,16 @@
 - 报错显示：`transport/client.mjs` 以前只保留 stderr 每块的最后一行，Node 崩溃时就只剩“Node.js v24.x”。现在保留最近 8 KB，`stderrSummary` 取第一条错误行（不带调用栈），没有错误行时取最后几行。连接日志（包括 WSL 端的 stderr）写到 Windows 上的 `~/.dsh-wsl/bridge.log`（超过 512 KB 时旧的改名为 `.old`），错误窗口显示它的路径。
 - 验证：单元测试把插件放在 `node_modules/@herenfor/dsh-wsl` 下复制，检查只剩 `STAMP` 的旧环境能自愈、子文件夹的改动会改变戳、复制不全时报错且不写 `STAMP`（这个测试在旧代码上失败）。测试 Desktop 改成从打包文件解压到 `node_modules` 安装（和 npm 安装一样），假 WSL 的 bridge 弄成只剩旧 `STAMP`：启动后自动重新复制、连上，侧栏出现 WSL 文件夹。再把 WSL 端的 `daemon.mjs` 换成会崩溃的文件：设置窗口显示 `Error [ERR_MODULE_NOT_FOUND]: Cannot find module …`，`bridge.log` 里有完整输出。
 - 升级到 0.1.4 后，开发机的戳也会变，连接文件重新复制一次，WSL 端的守护进程会被替换一次（正在运行的 WSL 任务会断开一次）。
+
+## WSL 的 dsh 是 pnpm 布局时 Desktop 白屏（2026-11-12，用户报告，0.1.4 及以前）
+
+远端机器在上一节修好、第一次真正连上 WSL 后，重开 Desktop 整个窗口白屏。`mirror-status.json` 的 `mirrored` 有 74 项，全是 `@deepseek-ai/*` 官方包。
+
+- 原因：WSL 端 agent 的 `builtinRoot()` 从 `dsh-client-modules` 的 `lib/client.js` 往上数四层当作安装根，这只对 npm 的扁平布局成立。用 dsh CLI 装的 DSH 是 pnpm 布局（`<install>/node_modules/.pnpm/<包>@<版本>/node_modules/<包>/…`），数四层停在 `dsh-client-modules` 自己的存储目录，其他官方包都不在它下面，于是 75 行里 74 行被标成 `user`。Desktop 端按设计用 WSL 的 `user` 行替换同名本地行，结果整个窗口的界面代码都改从 WSL 取；页面在 React 挂载前解析启动清单，任何一个模块经桥取不到就停在白色背景，连错误提示都画不出来。
+- 为什么开发机没遇到：开发机和测试环境 WSL 里的 dsh 都是 `npm install -g` 装的（扁平布局）。
+- 修复（0.1.5）：
+  - `builtinRoot()` 向上找 `.pnpm`，取它的父目录；没有 `.pnpm` 时仍数四层（npm 扁平和 npm 全局不变）。
+  - YAML 解析器改为从 `dsh-client-modules` 包文件本身解析（pnpm 下只有包自己的目录看得到它的依赖），再退到 `process.argv[1]` 和旧位置。不改的话安装根修对后 `disabled:` 会静默变空。
+  - Desktop 端加一道保护（`mergeGraphs` 的 `builtinHere`）：Desktop 自己 DSH 自带的行，无论 WSL 端怎么标，都不被替换，只记到 `mirror-status.json` 的 `kept` 并打一条警告。WSL 端判断出错时，窗口至少保留自己的官方界面。两边都装了的用户插件仍由 WSL 端提供，和以前一样。
+- 验证：单元测试覆盖 npm 扁平、pnpm（带链接）的安装根和 `isBuiltin`，以及 WSL 端把官方行都标成 `user` 时 Desktop 保留本地行（pnpm 的测试在旧代码上失败）。端到端：在假 WSL 里用 pnpm 装一份 dsh 0.2.2-rc.2（项目式，和远端一样），复用它，插件按 npm 方式装进测试 Desktop，结果：WSL 端 75 行全部是 `builtin`（旧算法在这份安装上只认出 325 个官方包里的 1 个），`mirrored` 为空，重载页面正常，侧栏有 WSL 文件夹。再把 WSL 端换回 0.1.4 的 agent（会误判）：Desktop 端 `kept` 74 行、`mirrored` 为空，页面照样正常。测试用的 pnpm 安装留在假 WSL 的 `~/.local/share/dsh-cli`，以后测复用时可以用。
+- 远端恢复：完全退出 Desktop 后，在 `%USERPROFILE%\.dsh-wsl\config.json` 把 `dshEntry` 临时改成不存在的路径（插件不连 WSL，也就不镜像），或在 Desktop profile 的 `cordis.patch.yml` 里停用插件；更新到 0.1.5 后改回原来的 `dshEntry`。

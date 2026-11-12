@@ -23,7 +23,9 @@ fi
 step() { printf '\n== %s\n' "$*"; }
 # Asks the registry itself, not npm's local cache, which keeps a "not found" for a while.
 on_npm() { curl -sf "https://registry.npmjs.org/$(node -p "encodeURIComponent('$name')" | sed 's/%40/@/')" | node -e '
-  let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.exit(JSON.parse(s).versions?.[process.argv[1]] && !JSON.parse(s).versions[process.argv[1]].stub ? 0 : 1))' "$1"; }
+  let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+    let v; try { v = JSON.parse(s).versions?.[process.argv[1]] } catch {}  // no answer or a partial one: not live yet
+    process.exit(v && !v.stub ? 0 : 1) })' "$1" 2>/dev/null; }
 cd "$here"
 
 name="$(node -p "require('$pkg/package.json').name")"

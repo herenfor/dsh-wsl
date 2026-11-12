@@ -28,7 +28,7 @@
 1. Desktop → 插件 → 添加插件 → 安装第三方插件，填 `@herenfor/dsh-wsl`，然后安装。
 2. 完全退出 Desktop（如果它还在系统托盘里运行，也要在托盘里退出），等 5 秒以上再打开。不重启的话插件不会开始工作，侧栏底部会提示「重启 Desktop 后生效」。
 3. 在新任务页，把输入框下方的运行位置切到 WSL。第一次会弹出「设置 WSL 运行环境」，选一种方式：
-   - **复用你装的 dsh**：WSL 里已经装了 dsh 时可以选。Desktop 和你在 WSL 里自己用的 dsh 共用数据，任务互相看得到；更新时两边一起更新。插件会在 PATH（包括登录 shell 的 PATH）、`~/.local/bin`、`/usr/local/bin`、`/usr/bin`，以及 nvm、fnm、pnpm、bun、`~/.npm-global` 的全局目录里找 `dsh`。装在别处的（比如装在某个项目文件夹里，或者由你自己的脚本启动），在设置窗口里填它的位置：命令、`@deepseek-ai/dsh` 包文件夹，或包里的 `lib/bin.js`。
+   - **复用你装的 dsh**：WSL 里已经装了 dsh 时可以选。Desktop 和你在 WSL 里自己用的 dsh 共用数据，任务互相看得到；插件也跟着你自己的 dsh 走（见下面「在 WSL 里装插件」）；更新时两边一起更新。插件会在 PATH（包括登录 shell 的 PATH）、`~/.local/bin`、`/usr/local/bin`、`/usr/bin`，以及 nvm、fnm、pnpm、bun、`~/.npm-global` 的全局目录里找 `dsh`。装在别处的（比如装在某个项目文件夹里，或者由你自己的脚本启动），在设置窗口里填它的位置：命令、`@deepseek-ai/dsh` 包文件夹，或包里的 `lib/bin.js`。
    - **插件专用一份**：装在 `~/.dsh-wsl/dsh`，数据放在 `~/.dsh-wsl/home`，不影响你自己的 dsh。要下载约 250 MB，装好后约占 900 MB。
 
    缺 Node.js 或 DSH 时，窗口里会列出要运行的命令，「查过的位置」里列出检查过哪些地方。Node.js 的版本要满足你那份 DSH 的要求（DSH 0.2 要 24.9 或更新）；用 nvm、fnm、asdf、mise、Volta 装的 Node 也能找到，用 nvm 的话也可以自己 `nvm install 24`，再点「重新检查」。你可以点「自动安装」，点「交给 DSH 安装」让 Windows 端的 DSH 去执行，或者自己在 WSL 终端里运行。插件不会自己在后台下载。
@@ -43,7 +43,12 @@
 
 ## 在 WSL 里装插件
 
-Desktop 在 WSL 里用自己单独的 profile（`desktop-wsl`）运行任务，一开始只有 DSH 的官方插件：你给自己的 `dsh web`（或其他 profile）装的插件不会自动带过来。想在 Desktop 窗口里用的，在这里装：
+Desktop 在 WSL 里用自己的 profile（`desktop-wsl`）运行任务，插件怎么来取决于运行方式：
+
+- **复用你装的 dsh**：插件跟着你自己 dsh 的 `web` profile 走。每次 Desktop 启动 WSL 端时，`web` 里装的插件、开关状态和插件设置都会带过来；在下面的标签页里安装、卸载、开关插件，也会改到 `web`（你自己的 dsh 下次启动时生效）；在 Desktop 里改的插件设置，下次启动时写回 `web`，两边都改过的以 `web` 为准。模型、主题、语言等 Desktop 自己的设置不会写进 `web`。之前只装在 `desktop-wsl` 里的插件保持原样，标签页里标为「只在 Desktop 中」。想跟着别的 profile，在 `%USERPROFILE%\.dsh-wsl\config.json` 里加 `"pluginProfile": "<名字>"`。
+- **插件专用一份**：插件单独管理，一开始只有官方插件。
+
+在这里安装：
 
 插件 →「WSL（发行版名）」→ 在安装框里填 npm 包名、git 地址或本地文件夹路径 → 检查 → 安装。Windows 路径会自动换成 WSL 路径。提示需要重启的，完全退出 Desktop，等 5 秒以上再打开。
 

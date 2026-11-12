@@ -394,6 +394,9 @@ export async function check({ wsl = 'wsl.exe', desktopVersion, chosen = {}, plug
   if (listing.probeError) status.probeError = listing.probeError
   if (listing.probeOutput) status.probeOutput = listing.probeOutput
   status.script = installScript(status, desktopVersion)
+  // Reuse mode: Desktop's WSL profile follows the person's own for plugins (`web` unless config.json names another;
+  // agent/follow.mjs). The plugin's own copy keeps its plugins to itself.
+  if (status.mode === 'reuse') status.follow = typeof chosen.pluginProfile === 'string' && /^[\w.-]+$/.test(chosen.pluginProfile) ? chosen.pluginProfile : 'web'
   if (status.state === 'ready' && pluginDir) {
     const bridgeDir = posix.join(status.home, '.dsh-wsl', 'bridge')
     try { status.files = installBridgeFiles(pluginDir, hostPathOf(platform, status.distro, status.home)) } catch (error) {
@@ -401,7 +404,7 @@ export async function check({ wsl = 'wsl.exe', desktopVersion, chosen = {}, plug
     }
     status.bridge = {
       command: wsl,
-      args: ['-d', status.distro, '--exec', status.node.path, posix.join(bridgeDir, 'transport', 'daemon.mjs'), '--bridge', '--profile', PROFILE, '--dsh', status.dshEntry, '--stamp', status.files.stamp, ...(status.dshHome ? ['--dsh-home', status.dshHome] : [])],
+      args: ['-d', status.distro, '--exec', status.node.path, posix.join(bridgeDir, 'transport', 'daemon.mjs'), '--bridge', '--profile', PROFILE, '--dsh', status.dshEntry, '--stamp', status.files.stamp, ...(status.dshHome ? ['--dsh-home', status.dshHome] : []), ...(status.follow ? ['--follow', status.follow] : [])],
     }
   }
   return status

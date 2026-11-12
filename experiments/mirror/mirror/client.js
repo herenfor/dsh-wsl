@@ -26,9 +26,9 @@ window.__ModuleLoader__.load({
         statusRestart: 'WSL 运行模式：重启 Desktop 后生效', restartBody: 'WSL 运行模式是在 Desktop 运行时装上、更新或打开的，要完全退出并重新打开 Desktop 后才会开始工作。', restartNote: '关闭窗口后，如果 Desktop 还在系统托盘里运行，也要在托盘里退出。等 5 秒以上再打开。',
         copy: '复制', copied: '已复制', current: '当前',
         modeAskOwn: 'WSL 里已经装了 DSH {version}。Desktop 在 WSL 里运行任务时，用哪一份？', modeAsk: 'Desktop 在 WSL 里运行任务时，用哪一份 DSH？',
-        reuseTitle: '复用你装的 dsh（{version}）', reuseSync: '会话同步：Desktop 里在 WSL 运行的任务，和你在 WSL 里自己用 dsh 时是同一份数据，任务记录、文件夹列表、插件互相都看得到。',
+        reuseTitle: '复用你装的 dsh（{version}）', reuseSync: '会话同步：Desktop 里在 WSL 运行的任务，和你在 WSL 里自己用 dsh 时是同一份数据，任务记录、文件夹列表互相看得到；插件和插件设置也跟着你自己的 dsh（web profile）走。',
         reuseVersion: '版本：两边要保持一致，更新时会一起更新你自己用的 dsh。', reuseIncompatible: '现在的 {version} 和 Desktop（{desktop}）不兼容，选择后需要先更新。', reuseNoDownload: '不用再下载。',
-        privateTitle: '插件专用一份', privateSync: '会话不同步：数据单独放在 ~/.dsh-wsl/home，和你自己用的 dsh 互相看不到。', privateVersion: '版本：由插件跟着 Desktop 管理，不影响你自己用的 dsh。',
+        privateTitle: '插件专用一份', privateSync: '会话不同步：数据单独放在 ~/.dsh-wsl/home，和你自己用的 dsh 互相看不到；插件也单独管理。', privateVersion: '版本：由插件跟着 Desktop 管理，不影响你自己用的 dsh。',
         privateDownload: '要单独下载安装（约 250 MB，装好后约 900 MB）。', modeLater: '以后可以在这里更改。换一种方式后，之前那种方式下的任务不会出现在列表里，数据不会删除。',
         installSize: 'DSH 连同依赖要下载约 250 MB，装好后约 900 MB，通常需要几分钟。如果 npm 提示找不到这个版本，说明它还没有发布到 npm，要等发布后再装。',
         handToDsh: '交给 DSH 安装', installHow: '「{label}」直接在 WSL 里运行上面的命令；「{handTo}」新建一个在 Windows 运行的任务，命令写在输入框里，检查后发送。也可以自己在 WSL 终端里运行（开始菜单里的 {distro}，或 PowerShell 里的 ', installHowEnd: '）。',
@@ -68,6 +68,8 @@ window.__ModuleLoader__.load({
         reuseWhere: '位置：{dir}', needsNodeMin: 'WSL 里没有找到 Node.js {min} 或更新的版本（这份 DSH 要求的）。', needsNodeManager: '用 nvm 等工具管理 Node 的话，也可以自己装一个 Node {major}（例如 nvm install {major}），再点「重新检查」，插件会找到它。',
         checkedTitle: '查过的位置', checkedNode: 'Node.js（需要 {min} 或更新）', checkedNone: '（一个也没找到）', seenFound: '找到', seenMissing: '不存在', seenNotDsh: '不是 DSH', nodeUsable: '可用', nodeTooOld: '版本太低',
         bridgeLogAt: '连接日志（含 WSL 端启动时的报错）在 Windows 上的 ', probeLogAt: '完整的检查输出在 Windows 上的 ', reuseLocal: '你的 dsh 不是 npm 全局安装的（在 {dir}），插件不替你更新它，以免装出第二份。请用你自己的方式把它更新到 {version}，再点「重新检查」。',
+        followIntro: '复用模式：这里的第三方插件跟着你自己的 dsh（profile {from}）走。在这里安装、卸载、开关，也会改到 {from}；你自己的 dsh 下次启动时生效。插件的设置两边共用，模型、主题等 Desktop 设置不会改到 {from}。',
+        followTag: '与 {from} 共用', onlyHereTag: '只在 Desktop 中', followFailed: '已在 Desktop 中完成，但没能同步到你的 {from}：{error}',
         backTo: '返回 {distro} 插件', detailNotConnected: '{distro} 端还没有连接。', detailMissing: '{distro} 里没有找到 {name}，可能已经卸载。', experimental: '实验性',
         enableIn: '在 {distro} 中启用 {name}', rowToggle: '开关组件 {name}', parts: '包含的组件', partsDisabled: '插件停用时，组件开关不可用。', source: '来源',
       },
@@ -83,9 +85,9 @@ window.__ModuleLoader__.load({
         statusRestart: 'WSL run mode: restart Desktop to start', restartBody: 'WSL run mode was installed, updated or switched on while Desktop was running. It starts working once you quit Desktop completely and open it again.', restartNote: 'If Desktop keeps running in the system tray after you close its window, quit it there too. Wait at least 5 seconds before opening it again.',
         copy: 'Copy', copied: 'Copied', current: 'Current',
         modeAskOwn: 'DSH {version} is already installed in WSL. Which copy should Desktop use to run tasks in WSL?', modeAsk: 'Which DSH should Desktop use to run tasks in WSL?',
-        reuseTitle: 'Reuse your dsh ({version})', reuseSync: 'Sessions shared: tasks Desktop runs in WSL use the same data as the dsh you run in WSL yourself, so tasks, folders and plugins show up on both.',
+        reuseTitle: 'Reuse your dsh ({version})', reuseSync: 'Sessions shared: tasks Desktop runs in WSL use the same data as the dsh you run in WSL yourself, so tasks and folders show up on both; plugins and their settings follow your own dsh (its web profile).',
         reuseVersion: 'Version: both must match, so updates also update the dsh you use yourself.', reuseIncompatible: 'Your {version} is not compatible with Desktop ({desktop}) and needs an update after you choose this.', reuseNoDownload: 'Nothing more to download.',
-        privateTitle: 'A separate copy for this plugin', privateSync: 'Sessions not shared: its data lives in ~/.dsh-wsl/home, apart from the dsh you use yourself.', privateVersion: "Version: the plugin keeps it at Desktop's version without touching your own dsh.",
+        privateTitle: 'A separate copy for this plugin', privateSync: 'Sessions not shared: its data lives in ~/.dsh-wsl/home, apart from the dsh you use yourself; so are its plugins.', privateVersion: "Version: the plugin keeps it at Desktop's version without touching your own dsh.",
         privateDownload: 'Needs its own download (about 250 MB, about 900 MB installed).', modeLater: 'You can change this here later. After switching, tasks from the other way no longer show in the list; their data is not deleted.',
         installSize: 'DSH and its dependencies download about 250 MB (about 900 MB installed), usually in a few minutes. If npm cannot find this version, it is not on npm yet; install it once it is published.',
         handToDsh: 'Let DSH install it', installHow: '"{label}" runs the commands above in WSL; "{handTo}" starts a task that runs in Windows with the commands in its input box, for you to check and send. You can also run them yourself in a WSL terminal ({distro} in the Start menu, or ', installHowEnd: ' in PowerShell).',
@@ -125,6 +127,8 @@ window.__ModuleLoader__.load({
         reuseWhere: 'Location: {dir}', needsNodeMin: 'No Node.js {min} or newer was found in WSL (this DSH requires it).', needsNodeManager: 'If you manage Node with nvm or a similar tool, you can also install Node {major} yourself (for example nvm install {major}) and click "Check again"; the plugin finds it.',
         checkedTitle: 'Where setup looked', checkedNode: 'Node.js (needs {min} or newer)', checkedNone: '(none found)', seenFound: 'found', seenMissing: 'not there', seenNotDsh: 'not DSH', nodeUsable: 'usable', nodeTooOld: 'too old',
         bridgeLogAt: "The connection log (including the WSL side's start-up errors) is on Windows at ", probeLogAt: 'The full check output is on Windows at ', reuseLocal: 'Your dsh is not an npm global install (it is in {dir}), so the plugin does not update it, which would put a second copy beside it. Update it to {version} your own way, then click "Check again".',
+        followIntro: "Reuse mode: the third-party plugins here follow your own dsh (profile {from}). Installing, uninstalling or switching one here changes {from} too, which your own dsh picks up when it next starts. Plugin settings are shared; Desktop's settings such as model and theme are not written to {from}.",
+        followTag: 'shared with {from}', onlyHereTag: 'Desktop only', followFailed: 'Done in Desktop, but not carried to your {from}: {error}',
         backTo: 'Back to {distro} plugins', detailNotConnected: '{distro} is not connected.', detailMissing: '{name} was not found in {distro}; it may have been uninstalled.', experimental: 'Experimental',
         enableIn: 'Enable {name} in {distro}', rowToggle: 'Turn component {name} on or off', parts: 'Components', partsDisabled: 'Component switches are unavailable while the plugin is disabled.', source: 'Source',
       },
@@ -774,12 +778,19 @@ window.__ModuleLoader__.load({
         try {
           const r = await api('wsl-bridge/plugins', body)
           if (r.error) setNote({ text: r.error, error: true })
-          else done?.(r.result)
+          else { done?.(r.result); if (r.follow?.error) setNote({ text: t('followFailed', { from: r.follow.from ?? '', error: r.follow.error }), error: true }) }
         } catch (e) { setNote({ text: String(e), error: true }) } finally { setBusy(null); void load() }
       }
       const outcome = (what) => (result) => setNote(outcomeText(what, result))
       const distro = state?.distro ? t('wslDistro', { distro: state.distro }) : 'WSL'
-      const intro = h('p', { style: { margin: '0 0 16px', fontSize: 13, color: MUTED, lineHeight: 1.6 } }, t('tabIntro', { distro }))
+      const intro = h('p', { style: { margin: '0 0 16px', fontSize: 13, color: MUTED, lineHeight: 1.6 } }, t('tabIntro', { distro }),
+        state?.follow ? h('span', { style: { display: 'block', marginTop: 6 } }, t('followIntro', { from: state.follow.from })) : null)
+      // Reuse mode: which plugins follow the person's own profile, and which live in Desktop's alone.
+      const followTag = (b) => {
+        if (!state?.follow || b.official) return null
+        const shared = state.follow.names.includes(b.name)
+        return h('span', { style: { fontSize: 11, padding: '1px 6px', borderRadius: 6, border: `1px solid ${BORDER}`, color: shared ? MUTED : FAINT, whiteSpace: 'nowrap' } }, shared ? t('followTag', { from: state.follow.from }) : t('onlyHereTag'))
+      }
       if (open !== null) return h(WslBundlePage, { name: open, distro, onBack: () => { setOpen(null); void load() } })
       if (state === null) return h('div', { style: { padding: 24, color: FAINT, fontSize: 13 } }, t('loading'))
       if (!state.connected) {
@@ -800,7 +811,7 @@ window.__ModuleLoader__.load({
         h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
           h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 } },
             h('span', { style: { fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, pageText(b.title)),
-            b.version ? h('span', { style: { fontSize: 12, color: FAINT } }, b.version) : null),
+            b.version ? h('span', { style: { fontSize: 12, color: FAINT } }, b.version) : null, followTag(b)),
           h('span', { style: { fontSize: 12, color: b.error ? ERROR : MUTED, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, b.error ?? (pageText(b.description) || b.name))),
         h('span', { style: { display: 'contents' }, onClick: (e) => e.stopPropagation(), onKeyDown: (e) => e.stopPropagation() },
         !b.official && b.installed ? button(t('uninstall'), () => { if (window.confirm(t('confirmRemove', { distro, name: pageText(b.title) }))) void act({ action: 'remove', name: b.name }, b.name, outcome(t('actRemove', { name: pageText(b.title) }))) }, { danger: true, disabled: busy !== null }) : null,
@@ -818,7 +829,7 @@ window.__ModuleLoader__.load({
             onKeyDown: (e) => { if (e.key === 'Enter' && spec.trim()) void act({ action: 'inspect', spec: spec.trim() }, 'install', setChecked) },
             style: { flex: 1, minWidth: 0, padding: '6px 10px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 13 } }),
           inspected
-            ? button(busy === 'install' ? t('installing') : t('install'), () => void act({ action: 'install', spec: spec.trim() }, 'install', (r) => { outcome(t('actInstall', { name: inspected.name ?? spec.trim() }))(r); if (!r?.error && r?.application !== 'failed') { setSpec(''); setChecked(null) } }), { primary: true, disabled: busy !== null })
+            ? button(busy === 'install' ? t('installing') : t('install'), () => void act({ action: 'install', spec: spec.trim(), name: inspected.name }, 'install', (r) => { outcome(t('actInstall', { name: inspected.name ?? spec.trim() }))(r); if (!r?.error && r?.application !== 'failed') { setSpec(''); setChecked(null) } }), { primary: true, disabled: busy !== null })
             : button(busy === 'install' ? t('checkingButton') : t('check'), () => void act({ action: 'inspect', spec: spec.trim() }, 'install', setChecked), { disabled: busy !== null || !spec.trim() })),
         checked?.status === 'refused' ? h('div', { style: { fontSize: 12, color: ERROR } }, checked.reason) : null,
         inspected ? h('div', { style: { fontSize: 12, color: MUTED } }, `${inspected.name ?? spec.trim()}${inspected.version ? ` ${inspected.version}` : ''}${inspected.description ? ` — ${inspected.description}` : ''}${inspected.bundle === false ? t('notBundle') : ''}`) : null,

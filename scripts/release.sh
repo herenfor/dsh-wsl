@@ -59,7 +59,7 @@ step "package contents"
 ( cd "$pkg" && npm pack --dry-run --json 2>/dev/null ) | node -e '
   const files = JSON.parse(require("fs").readFileSync(0, "utf8"))[0].files.map((f) => f.path)
   const need = ["package.json", "index.mjs", "client.js", "cordis.patch.yml", "icon.svg", "README.md", "README.zh.md", "LICENSE",
-    "locale/en.json", "locale/zh.json", "transport/daemon.mjs", "transport/mux.mjs", "transport/client.mjs", "agent/index.mjs", "agent/package.json"]
+    "locale/en.json", "locale/zh.json", "transport/daemon.mjs", "transport/mux.mjs", "transport/client.mjs", "agent/index.mjs", "agent/follow.mjs", "agent/package.json"]
   const missing = need.filter((f) => !files.includes(f))
   console.log(`${files.length} files`)
   if (missing.length) { console.error(`missing from the package: ${missing.join(", ")}`); process.exit(1) }'

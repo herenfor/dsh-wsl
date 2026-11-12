@@ -28,7 +28,7 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
 2. Quit Desktop completely (if it keeps running in the system tray, quit it there too), wait at least 5 seconds, then open it again. Until then the plugin does not start working, and the bottom of the sidebar says to restart Desktop.
 3. On the new-task page, switch the run location under the input box to WSL. The first time, "Set up the WSL environment" opens; choose one way:
-   - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; updates update both. The plugin looks for `dsh` on your PATH (including a login shell's), in `~/.local/bin`, `/usr/local/bin`, `/usr/bin`, and in the global folders of nvm, fnm, pnpm, bun and `~/.npm-global`. If yours is somewhere else (installed into a project folder, or started by a script of your own), enter its location in the setup window: the command, the `@deepseek-ai/dsh` package folder or its `lib/bin.js`.
+   - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; plugins follow your own dsh too (see "Installing plugins in WSL" below); updates update both. The plugin looks for `dsh` on your PATH (including a login shell's), in `~/.local/bin`, `/usr/local/bin`, `/usr/bin`, and in the global folders of nvm, fnm, pnpm, bun and `~/.npm-global`. If yours is somewhere else (installed into a project folder, or started by a script of your own), enter its location in the setup window: the command, the `@deepseek-ai/dsh` package folder or its `lib/bin.js`.
    - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.
 
    If Node.js or DSH is missing, the window lists the commands to run, and under "Where setup looked" which places were checked. Node.js must be as new as your DSH asks for (24.9 or newer for DSH 0.2); one installed with nvm, fnm, asdf, mise or Volta is found too, so with nvm you can also run `nvm install 24` and click "Check again". Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
@@ -43,7 +43,12 @@ The install box in step 1 also takes these, but a plugin installed this way cann
 
 ## Installing plugins in WSL
 
-Desktop runs its WSL tasks in a profile of its own in WSL, `desktop-wsl`, which starts with DSH's official plugins only: plugins you installed for your own `dsh web` (or another profile) are not carried over. Install the ones you want in the Desktop window here:
+Desktop runs its WSL tasks in a profile of its own in WSL, `desktop-wsl`. Where its plugins come from depends on the run mode:
+
+- **Reuse your dsh**: plugins follow the `web` profile of your own dsh. Each time Desktop starts the WSL side, the plugins installed in `web`, whether they are on, and their settings are carried over; installing, uninstalling or switching a plugin in the tab below changes `web` too (your own dsh picks it up when it next starts); plugin settings changed in Desktop are written back to `web` at the next start, and when both sides changed one, `web` wins. Desktop's own settings (model, theme, language and so on) are never written to `web`. Plugins installed only in `desktop-wsl` before stay as they are, marked "Desktop only" in the tab. To follow another profile, add `"pluginProfile": "<name>"` to `%USERPROFILE%\.dsh-wsl\config.json`.
+- **A separate copy for this plugin**: its plugins are its own, starting with the official ones.
+
+Install here:
 
 Plugins → "WSL (distribution)" → enter an npm package name, git URL or local folder path in the install box → Check → Install. Windows paths are turned into WSL paths. When it says a restart is needed, quit Desktop completely, wait at least 5 seconds and open it again.
 

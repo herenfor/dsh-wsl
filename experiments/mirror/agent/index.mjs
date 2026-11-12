@@ -6,10 +6,12 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 import { BrokerClient, brokerCredentials } from './broker.mjs'
+import { changeSource, followState, noteFollowed, runDsh } from './follow.mjs'
 
 export const name = 'wsl-agent'
 export const inject = ['clientModules', 'webServer']
 export const EVENTS = '/wsl-bridge/events'
+export const FOLLOW = '/wsl-bridge/follow'
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
 const real = (p) => { try { return realpathSync(p) } catch { return p } }
@@ -142,6 +144,30 @@ export function apply(ctx) {
   }
   const frame = () => { const dir = profileDir(); return `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection(), disabled(), dir ? profilePlugins(dir) : []))}\n\n` }
   const push = () => { const f = frame(); for (const res of clients) res.write(f) }
+  // Reuse mode (the daemon passes DSH_WSL_FOLLOW): which plugins follow the person's own profile, and the WSL tab's
+  // changes applied to that profile too. GET → { from, names } | { from: null }; POST { action, name, spec }.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: FOLLOW,
+    async handler(req, res) {
+      const from = process.env.DSH_WSL_FOLLOW
+      const i = process.argv.indexOf('--profile')
+      const to = i >= 0 ? process.argv[i + 1] : undefined
+      const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
+      if (!from || !to) return reply({ from: null })
+      if (req.method === 'GET') return reply({ from, names: followState(to)?.names ?? [] })
+      if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
+      let body = {}
+      try { const chunks = []; for await (const c of req) chunks.push(c); body = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch {}
+      const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+      // Install the same thing this Host's profile just installed (the WSL tab installs here first): its manifest's spec.
+      let spec = body.spec
+      if (body.action === 'install') { try { spec = JSON.parse(readFileSync(join(home, 'profiles', to, 'package.json'), 'utf8')).dependencies?.[body.name] ?? spec } catch {} }
+      const result = changeSource({ home, from, action: body.action, name: body.name, spec, run: runDsh(process.argv[1], process.env) })
+      if (result.ok) { try { noteFollowed(to, body) } catch {} }
+      reply({ from, ...result })
+    },
+  }), 'wsl-agent: follow route')
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: EVENTS,

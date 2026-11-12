@@ -280,6 +280,15 @@ export async function apply(ctx, config = {}) {
     if (!json?.result?.ok) throw Object.assign(new Error(json?.result?.error?.message ?? `HTTP ${r.status}`), { code: json?.result?.error?.code })
     return json.result.value
   }
+  // Reuse mode: the WSL profile follows the person's own (agent/follow.mjs). { from, names } or { from: null } (the
+  // plugin's own copy, or a WSL side without the route).
+  const followInfo = async () => {
+    try { const r = await remoteFetch('/wsl-bridge/follow', { headers: { cookie: await cookie() } }); return r.ok ? await r.json() : { from: null } } catch { return { from: null } }
+  }
+  const followChange = async (change) => {
+    const r = await remoteFetch('/wsl-bridge/follow', { method: 'POST', body: Buffer.from(JSON.stringify(change)), headers: { cookie: await cookie(), origin: remoteOrigin(), 'content-type': 'application/json' } })
+    return r.ok ? r.json() : { error: `HTTP ${r.status}` }
+  }
   ctx.effect(() => ws.register({
     kind: 'exact', path: '/wsl-bridge/plugins',
     async handler(req, res) {
@@ -302,7 +311,14 @@ export async function apply(ctx, config = {}) {
             row: () => callWsl('setPluginEnabled', { id: body.entryId, enabled: body.enabled === true }),
           }[body.action]
           if (call === undefined) return reply({ connected: true, distro, error: `unknown action ${body.action}` })
-          return reply({ connected: true, distro, result: await call() })
+          const result = await call()
+          // Followed: the person's own profile gets the same change (after this one worked here).
+          let follow
+          if (['install', 'remove', 'enable', 'disable'].includes(body.action) && typeof body.name === 'string' && !result?.error && result?.application !== 'failed') {
+            const info = await followInfo()
+            if (info.from) follow = await followChange({ action: body.action, name: body.name, spec: toWslSpec(String(body.spec ?? '')) })
+          }
+          return reply({ connected: true, distro, result, ...(follow ? { follow } : {}) })
         }
         const query = new URL(req.url, 'http://x').searchParams
         const name = query.get('name')
@@ -314,7 +330,8 @@ export async function apply(ctx, config = {}) {
           const [bundles, plugins] = await Promise.all([callWsl('listBundles', {}), callWsl('listPlugins', {})])
           return reply({ connected: true, distro, bundle: wslBundlePage(bundles, plugins, name) ?? null })
         }
-        reply({ connected: true, distro, bundles: wslBundles(await callWsl('listBundles', {})) })
+        const [bundles, follow] = await Promise.all([callWsl('listBundles', {}), followInfo()])
+        reply({ connected: true, distro, bundles: wslBundles(bundles), follow: follow.from ? follow : null })
       } catch (error) { reply({ connected: true, distro, error: error.message, code: error.code }) }
     },
   }), 'wsl-mirror: WSL plugins route')

@@ -2,7 +2,8 @@
 //   node daemon.mjs --serve  [options]   long-running: runs the DSH Host, accepts bridges on a Unix socket
 //   node daemon.mjs --bridge [options]   started by wsl.exe: joins its stdio to the daemon (starting it if needed)
 // Options: --profile <name> (desktop-wsl); --dsh <DSH's entry script> (else searched); --stamp <bridge files stamp>;
-// --dsh-home <dir> (else DSH's default ~/.dsh, shared with the person's own WSL DSH; the seam for moving sessions).
+// --dsh-home <dir> (else DSH's default ~/.dsh, shared with the person's own WSL DSH; the seam for moving sessions);
+// --follow <profile> (reuse mode: the profile follows that one of the person's for plugins, ../agent/follow.mjs).
 // A bridge whose stamp, DSH or DSH home differs from the running daemon's replaces that daemon (after a plugin or DSH
 // update). Before starting DSH the daemon creates the profile from the web template and adds this plugin's WSL half
 // (../agent) when they are missing; both are local operations.
@@ -29,7 +30,9 @@ const IDENTITY_FILE = join(RUN, 'daemon.json')
 const DSH_OPTION = option('--dsh')
 const STAMP = option('--stamp', '')
 const DSH_HOME_OPTION = option('--dsh-home')
+const FOLLOW = option('--follow')
 const AGENT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent')
+const follow = existsSync(join(AGENT_DIR, 'follow.mjs')) ? await import(new URL('../agent/follow.mjs', import.meta.url).href) : undefined
 const DSH_HOST = '127.0.0.2'
 // With no Desktop connected for this long the daemon stops its DSH Host and exits: quitting Desktop stops the WSL side
 // too. The wait lets a bridge that is only being replaced (plugin reload, update) come back without a restart.
@@ -43,7 +46,7 @@ function findDsh() {
 }
 // The WSL DSH Host always uses the default DSH home (~/.dsh): a DSH_HOME inherited from whoever started the daemon
 // (a test Host, a shell) must not move it elsewhere.
-const childEnv = () => ({ ...withoutDshHome(process.env), ...(DSH_HOME_OPTION ? { DSH_HOME: DSH_HOME_OPTION } : {}), DSH_WSL_RUN: RUN, PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
+const childEnv = () => ({ ...withoutDshHome(process.env), ...(DSH_HOME_OPTION ? { DSH_HOME: DSH_HOME_OPTION } : {}), DSH_WSL_RUN: RUN, ...(FOLLOW ? { DSH_WSL_FOLLOW: FOLLOW } : {}), PATH: [dirname(process.execPath), join(homedir(), '.local', 'bin'), process.env.PATH ?? '/usr/bin:/bin'].join(delimiter) })
 export const PROTOCOL = 1
 
 function withoutDshHome(env) { const { DSH_HOME, ...rest } = env; return rest }
@@ -58,9 +61,9 @@ function dshVersion(entry) {
 function identity() {
   let dsh = null
   try { dsh = findDsh() } catch {}
-  return { stamp: STAMP, dsh, version: dsh ? dshVersion(dsh) ?? null : null, dshHome: DSH_HOME_OPTION ?? null }
+  return { stamp: STAMP, dsh, version: dsh ? dshVersion(dsh) ?? null : null, dshHome: DSH_HOME_OPTION ?? null, follow: FOLLOW ?? null }
 }
-const sameIdentity = (a, b) => a && b && a.stamp === b.stamp && a.dsh === b.dsh && a.version === b.version && a.dshHome === b.dshHome
+const sameIdentity = (a, b) => a && b && a.stamp === b.stamp && a.dsh === b.dsh && a.version === b.version && a.dshHome === b.dshHome && (a.follow ?? null) === (b.follow ?? null)
 /** Create the profile and add the WSL half of the plugin when missing. Local operations only (a link: dependency). */
 function ensureProfile(dsh) {
   const home = DSH_HOME_OPTION ?? join(homedir(), '.dsh')
@@ -78,6 +81,11 @@ function ensureProfile(dsh) {
   if (existsSync(join(AGENT_DIR, 'package.json'))) {
     const spec = `link:${realpathSync(AGENT_DIR)}`
     if (pkg.dependencies?.['dsh-wsl-agent'] !== spec) step(`point dsh-wsl-agent at ${AGENT_DIR}`, ['plugin', '--profile', PROFILE, 'add', spec])
+  }
+  // Reuse mode: the person's plugins, their on/off and config, as in their own profile.
+  if (FOLLOW && follow) {
+    const run = (argv) => { const r = spawnSync(process.execPath, [dsh, ...argv], { env: childEnv(), encoding: 'utf8', timeout: 300_000 }); return { status: r.status, stderr: `${r.stderr ?? ''}${r.error ? r.error.message : ''}` } }
+    try { follow.syncFollow({ home, from: FOLLOW, to: PROFILE, dshEntry: dsh, run, log }) } catch (error) { log(`follow: ${error.message}`) }
   }
 }
 const log = (message) => { try { appendFileSync(LOG, `${new Date().toISOString()} ${message}\n`, { mode: 0o600 }) } catch {} }
@@ -241,7 +249,7 @@ async function bridge() {
   if (!(await reachable())) {
     mkdirSync(RUN, { recursive: true, mode: 0o700 })
     const out = openSync(LOG, 'a', 0o600)
-    const pass = [['--profile', PROFILE], ['--dsh', DSH_OPTION], ['--stamp', STAMP || undefined], ['--dsh-home', DSH_HOME_OPTION]].flatMap(([k, v]) => (v ? [k, v] : []))
+    const pass = [['--profile', PROFILE], ['--dsh', DSH_OPTION], ['--stamp', STAMP || undefined], ['--dsh-home', DSH_HOME_OPTION], ['--follow', FOLLOW]].flatMap(([k, v]) => (v ? [k, v] : []))
     spawn(process.execPath, [fileURLToPath(import.meta.url), '--serve', ...pass], { detached: true, stdio: ['ignore', out, out], env: withoutDshHome(process.env) }).unref()
     for (let i = 0; i < 100 && !(await reachable()); i++) await new Promise((r) => setTimeout(r, 100))
     if (!(await reachable())) {

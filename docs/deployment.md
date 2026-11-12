@@ -199,3 +199,15 @@
 修复（0.1.6）：WSL 端的快照多带一个 `owner`：标成 `user` 的行，它的代码在 profile 的哪个第三方插件里（按 profile 依赖的真实目录判断，`link:` 安装的也算）。Desktop 端只在官方行有第三方插件做 `owner` 时才用 WSL 的；没有 `owner` 的（安装结构误判之类）和 `owner` 是官方包的，仍留在本地。规则一句话：官方组件只允许被 WSL 里的插件替换。
 
 验证：单元测试覆盖插件替身可以替换、官方包做 owner 不行、`link:` 安装的插件能找到 owner、安装目录里的行没有 owner。端到端：假 WSL 的 desktop-wsl 启用调优插件，`mirrored` 为 `@deepseek-ai/dsh-client-ui-chat`、`kept` 为空，页面正常；0.1.4 的 agent 不带 `owner`，误判的 74 行仍全部留在本地（前一节的验证）。
+
+## 复用模式下插件跟着用户自己的 profile 走（2026-11-12，用户决定）
+
+用户的原则：选了复用，就是连插件一起复用；插件专用一份，插件也独立。两种做法里用户选了“跟着你的 profile 走”（不选“直接用同一个 profile”：那样 Desktop 的设置会覆盖用户自己 dsh 的设置，agent 要加进用户的 profile，两个 DSH 同时跑同一个 profile）。
+
+- 做法（`agent/follow.mjs`）：复用模式下 Desktop 给守护进程传 `--follow web`（`config.json` 的 `pluginProfile` 可改）。守护进程每次启动 DSH 前同步一次 `desktop-wsl`：
+  - 插件：来源 profile 的依赖用 `dsh plugin --profile desktop-wsl add --prefer-offline` 补齐，开关状态照来源；从来源同步过来、后来在来源里删掉的，跟着删。只在 `desktop-wsl` 里装过的插件不动。装不上的插件不启用，不影响 DSH 启动。
+  - 插件设置：`cordis.patch.yml` 里属于被跟随插件的条目（该插件插入的 entry，或模块名属于该插件），对照上次同步时的样子三方合并：哪边改了用哪边，两边都改了以来源为准；写回时保留文件开头的注释。官方设置（模型、主题、语言等）不跟随，也从不写进用户的 profile。
+  - 跟随记录在 WSL 的 `~/.dsh-wsl/follow/desktop-wsl.json`。
+- WSL 标签页：复用模式下显示说明，第三方插件标“与 web 共用”或“只在 Desktop 中”。安装、卸载、开关先在 `desktop-wsl` 生效，再由 agent 改到来源 profile（安装用 `desktop-wsl` 实际记下的依赖规格，两边一致）；改不过去时提示。
+- 守护进程的身份带上 `follow`，换来源 profile 会替换守护进程。
+- 验证：单元测试覆盖同步计划（新增、删除、开关、保留 `desktop-wsl` 自己的插件、agent 永不动）、三方合并（单边改、两边改、删除、官方设置不跟随、嵌套 insert）、磁盘上的完整同步（`dsh plugin add` 调用、第二次同步无操作、写回保留注释）、标签页改动写到来源。用两种安装（npm 全局、pnpm）实测 DSH 自带 js-yaml 能往返 `!!js`。端到端（假 WSL 建了带调优插件的 `web`）：启动后 `desktop-wsl` 装上并启用调优插件、配置带过来，ds-bot 等原有插件不变；标签页停用调优插件，`web` 跟着停用，再启用也跟着；把 `desktop-wsl` 里调优插件的预设改掉后重启，改动写回 `web`。

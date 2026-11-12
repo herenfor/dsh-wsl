@@ -1,6 +1,6 @@
 {
   "name": "@herenfor/dsh-wsl",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "WSL run mode for DeepSeek Harness Desktop on Windows: run chosen tasks, and the plugins they use, in WSL from the Desktop window",
   "license": "MIT",
   "icon": "./icon.svg",

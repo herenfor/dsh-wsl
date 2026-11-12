@@ -8,7 +8,7 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 
 ![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-en.webp)
 
-<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors.</sub>
+<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors. In the DS Bot screenshot, the replies come from a local stand-in model used for testing; the system details in the table are the real output of the command run in WSL.</sub>
 
 ## What it does
 
@@ -64,6 +64,8 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 ![The WSL tab on the Plugins page](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/plugins-en.webp)
 
 ![A WSL plugin's page](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/detail-en.webp)
+
+![DS Bot installed in WSL, with its own interface working in the Desktop window; the Bot runs a command in WSL to check the environment](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/bot-en.webp)
 
 ## Updates
 

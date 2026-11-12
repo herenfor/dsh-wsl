@@ -8,7 +8,7 @@
 
 ![新任务页：侧栏同时列出 Windows 和 WSL 的任务，输入框下方选运行位置；右下角的桌宠是装在 WSL 里的插件](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-zh.webp)
 
-<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。</sub>
+<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。DS Bot 截图里的回复由测试用的本地模拟模型生成，表格中的系统信息是命令在 WSL 里实际运行的输出。</sub>
 
 ## 能做什么
 
@@ -64,6 +64,8 @@ Desktop 在 WSL 里用自己的 profile（`desktop-wsl`）运行任务，插件�
 ![插件页的 WSL 标签页](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/plugins-zh.webp)
 
 ![WSL 插件的详情页](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/detail-zh.webp)
+
+![装在 WSL 里的 DS Bot，专属界面在 Desktop 窗口里照常使用；Bot 在 WSL 里运行命令查看环境](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/bot-zh.webp)
 
 ## 更新
 

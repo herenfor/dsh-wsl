@@ -37,6 +37,8 @@ Desktop (DSH Host + page)                       DSH Host (profile desktop-wsl)
 - Transport: one multiplexed connection over `wsl.exe`'s standard input and output, with a resident process on the WSL side, the same approach as Claude Code Desktop's WSL mode.
 - Session IDs: WSL sessions and folders carry a `wsl:` prefix on the page; forwarded requests are rewritten by field and by value.
 - Credentials: never copied into WSL; the WSL side gets a credential broker that asks Desktop when it needs one.
+- Settings: copied one way into WSL. A setting that names an entry of a list (the default preset, the search service, the default model…) keeps the person's choice, and each side stores it only if it has that entry, otherwise using its own default; machine-only settings such as MCP servers and sandboxes are not copied. The rules and trade-offs are in [docs/cross-host-rules.md](docs/cross-host-rules.md) (Chinese).
+- Lists across both sides: scheduled tasks, presets, models and similar lists merge both sides; a call on one entry goes back to its side by its ID prefix.
 
 ## Repository layout
 
@@ -81,6 +83,7 @@ The workflow publishes only once the package's trusted publisher is set on npmjs
 - [docs/panel.md](docs/panel.md): the Plugins page (now separate Windows and WSL tabs).
 - [docs/credentials.md](docs/credentials.md): how WSL sessions use Desktop's credentials.
 - [docs/deployment.md](docs/deployment.md): first-run setup, version rules, plugin self-update, interface language.
+- [docs/cross-host-scan.md](docs/cross-host-scan.md) and [docs/cross-host-rules.md](docs/cross-host-rules.md): the scan for differences between the two sides, and the rules that settle them, compared with VS Code Remote and Claude Code.
 
 ## License
 

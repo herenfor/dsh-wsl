@@ -211,3 +211,15 @@
 - WSL 标签页：复用模式下显示说明，第三方插件标“与 web 共用”或“只在 Desktop 中”。安装、卸载、开关先在 `desktop-wsl` 生效，再由 agent 改到来源 profile（安装用 `desktop-wsl` 实际记下的依赖规格，两边一致）；改不过去时提示。
 - 守护进程的身份带上 `follow`，换来源 profile 会替换守护进程。
 - 验证：单元测试覆盖同步计划（新增、删除、开关、保留 `desktop-wsl` 自己的插件、agent 永不动）、三方合并（单边改、两边改、删除、官方设置不跟随、嵌套 insert）、磁盘上的完整同步（`dsh plugin add` 调用、第二次同步无操作、写回保留注释）、标签页改动写到来源。用两种安装（npm 全局、pnpm）实测 DSH 自带 js-yaml 能往返 `!!js`。端到端（假 WSL 建了带调优插件的 `web`）：启动后 `desktop-wsl` 装上并启用调优插件、配置带过来，ds-bot 等原有插件不变；标签页停用调优插件，`web` 跟着停用，再启用也跟着；把 `desktop-wsl` 里调优插件的预设改掉后重启，改动写回 `web`。
+
+## 两边设置、定时任务和 MCP 怎么并存（2026-11-12，0.1.9）
+
+起因是用户把 WSL 独有的调优预设设为新任务默认后，Windows 任务建不出来。扫描和规则见 `docs/cross-host-scan.md`、`docs/cross-host-rules.md`，这里只记部署上要知道的：
+
+- 新文件：Windows 上的 `%USERPROFILE%\.dsh-wsl\choices.json`，记下"指向清单条目"的设置（默认预设、默认权限预设、搜索服务、默认模型、子智能体可用模型）用户选的是什么，以及上次写给 Windows 的值。删掉它不会坏：插件下次以 Windows 当前的值为选择重新开始。
+- 升级到 0.1.9 后的第一次同步：选择从 Windows 当前的值开始；如果之前同步到 WSL 的值 WSL 没有，WSL 那一份会被清空、改用 WSL 的默认（不再存一个用不了的值）。
+- `mcp-manager`、`bash-sandbox`、`pwsh-sandbox` 不再同步到 WSL。0.1.8 及以前已经复制到 WSL 的 MCP 配置保留不删，用户可以在 WSL 标签页底部的「MCP 服务器」里改或清掉。各处 `*apiKeyEnv` 字段保留 WSL 自己的值，WSL 还没有时先用 Windows 的。
+- 新路由 `/wsl-bridge/mcp`（GET 读、POST 整体替换 WSL 的 `mcp-manager.servers`，带 revision）。
+- 定时任务：WSL 的定时任务 id 在页面上带 `wsl:` 前缀，和会话一样。WSL 端只在 Desktop 开着时运行，所以 WSL 的定时任务也只在那时触发。
+- 顺带：同步时 WSL 端的值如果等于 WSL 的默认值，以前每分钟重写一次 `settings`（revision 一直涨），现在不写了。
+- 验证：单元测试 56 个；`dev/scan/run.sh` 复扫结果记在 `dev/scan/report-2026-11-12.md` 末尾。没有在真实 Windows Desktop 上验证。

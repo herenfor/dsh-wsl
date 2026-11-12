@@ -36,6 +36,8 @@ Desktop（DSH Host + 页面）                 DSH Host（profile desktop-wsl）
 - 传输：`wsl.exe` 的标准输入输出上跑一条多路复用连接，WSL 端是常驻进程，和 Claude Code 桌面版的 WSL 模式同一种思路。
 - 会话 ID：WSL 的会话和文件夹在页面上带 `wsl:` 前缀，请求转发时按字段和按值改写。
 - 凭据：不复制到 WSL，WSL 端换上凭据代理，用的时候向 Desktop 要。
+- 设置：单向同步到 WSL。指向某个清单条目的设置（默认预设、搜索服务、默认模型等）记下用户的选择，每边只存它自己有的值，没有就用那边的默认；MCP、沙箱这类本机专属的设置不同步。规则和取舍见 [docs/cross-host-rules.md](docs/cross-host-rules.md)。
+- 跨两边的列表：定时任务、预设、模型等列表合并两边，单条操作按 ID 前缀送回所在的一边。
 
 ## 仓库结构
 
@@ -80,6 +82,7 @@ scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1
 - [docs/panel.md](docs/panel.md)：插件页（现在是 Windows 和 WSL 分开的两个标签页）。
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据。
 - [docs/deployment.md](docs/deployment.md)：首次设置、版本规则、插件更新、界面语言。
+- [docs/cross-host-scan.md](docs/cross-host-scan.md) 和 [docs/cross-host-rules.md](docs/cross-host-rules.md)：两边差异的扫描，以及处理这些差异的规则（对照 VS Code Remote 和 Claude Code）。
 
 ## 许可证
 

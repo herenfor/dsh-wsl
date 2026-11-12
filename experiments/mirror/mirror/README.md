@@ -18,6 +18,9 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 - **WSL plugins on their own tab**: the Plugins page gets a "WSL (distribution)" tab to install, enable, disable and uninstall plugins in WSL, with a page per plugin showing its description and the state of each component. The official Installed tab still covers Windows only; the two sides do not affect each other. Plugins installed only in WSL, including ones that change the interface, work in the Desktop window too.
 - **Desktop's model credentials**: when a WSL task calls a model, it asks Desktop for the credentials; API keys and sign-ins are never written to the WSL disk. An API key you entered in WSL yourself takes precedence.
 - **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL; settings only WSL plugins have stay in WSL.
+- **Both sides' choices in one list**: where you pick one entry from a list (the default preset, the default permission preset, the search service, the model), the list shows both sides' entries, with " · WSL" on those only WSL has. When you pick one that only one side has, tasks on the other side use that side's own default, and the presets page says what the other side uses.
+- **MCP servers set per side**: an MCP server's command, paths and environment variables differ between Windows and WSL, so they are not copied from Windows. Set up WSL's MCP servers at the bottom of the "WSL (distribution)" tab on the Plugins page; they serve only tasks that run in WSL.
+- **Scheduled tasks together**: the scheduled tasks page lists both sides' scheduled tasks, and viewing, editing, running now and deleting one go to the side it lives on. A scheduled task that starts a new task is created on the side where the chosen folder runs.
 - **Starts and stops with Desktop**: the WSL side starts when Desktop opens and exits about 5 seconds after Desktop closes.
 - **Follows DSH's language**: Chinese and English for now; other languages show English.
 
@@ -94,7 +97,9 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 - Reusing your dsh runs its package directly with Node, with its data in `~/.dsh`. It does not go through launch scripts or wrappers of your own: environment variables, ports or a `DSH_HOME` set there are not applied.
 - When a WSL plugin's patch changes the configuration of an official component (rather than switching it off), that change does not apply in the Desktop window.
 - The interface of WSL plugins loads into the whole Desktop window, not only into WSL tasks.
-- Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background.
+- Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background, and WSL's scheduled tasks run only while Desktop is open.
+- Referring to another task with @ works only within one side: a WSL task is offered WSL tasks, a Windows task Windows tasks.
+- The "All plugins" page in Settings lists Windows plugins only; WSL plugins are on the "WSL (distribution)" tab.
 
 ## License
 

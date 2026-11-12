@@ -34,6 +34,13 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
    If Node.js or DSH is missing, the window lists the commands to run. Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
 4. Once connected, the loading note at the bottom of the sidebar goes away and the WSL folders and tasks appear in the sidebar.
 
+### Other ways to install
+
+The install box in step 1 also takes these, but a plugin installed this way does not update itself:
+
+- From GitHub: `github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`, or for a given version `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`.
+- From a local folder: download the repository to Windows and enter the full path of its `experiments/mirror/mirror` folder.
+
 ## Installing plugins in WSL
 
 Plugins → "WSL (distribution)" → enter an npm package name, git URL or local folder path in the install box → Check → Install. Windows paths are turned into WSL paths. When it says a restart is needed, quit Desktop completely, wait at least 5 seconds and open it again.

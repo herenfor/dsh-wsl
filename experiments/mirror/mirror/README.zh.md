@@ -34,6 +34,13 @@
    缺 Node.js 或 DSH 时，窗口里会列出要运行的命令。你可以点「自动安装」，点「交给 DSH 安装」让 Windows 端的 DSH 去执行，或者自己在 WSL 终端里运行。插件不会自己在后台下载。
 4. 连上之后，侧栏底部的加载提示会消失，WSL 的文件夹和任务出现在侧栏里。
 
+### 其他安装方式
+
+第 1 步的安装框也接受下面两种写法，但这样装的不会自动更新：
+
+- 从 GitHub 安装：`github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`。指定版本时写成 `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`。
+- 从本地文件夹安装：把仓库下载到 Windows 上，填 `experiments/mirror/mirror` 文件夹的完整路径。
+
 ## 在 WSL 里装插件
 
 插件 →「WSL（发行版名）」→ 在安装框里填 npm 包名、git 地址或本地文件夹路径 → 检查 → 安装。Windows 路径会自动换成 WSL 路径。提示需要重启的，完全退出 Desktop，等 5 秒以上再打开。

@@ -1,0 +1,69 @@
+# DSH WSL run mode
+
+English | [中文](README.zh.md)
+
+Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window.
+
+> Beta. Tested only with DSH 0.2.2-rc.1 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
+
+## What it does
+
+- **Choose where each task runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
+- **Add WSL folders**: when adding a folder, choose a Windows folder or a WSL folder. A WSL folder is picked by browsing the Linux file system right in Desktop.
+- **Both sides in one list**: the sidebar lists the folders and tasks of Windows and WSL together, with a small penguin on WSL ones. Approvals, questions, subagents and live titles work as in any task.
+- **WSL plugins on their own tab**: the Plugins page gets a "WSL (distribution)" tab to install, enable, disable and uninstall plugins in WSL, with a page per plugin showing its description and the state of each component. The official Installed tab still covers Windows only; the two sides do not affect each other. Plugins installed only in WSL, including ones that change the interface, work in the Desktop window too.
+- **Desktop's model credentials**: when a WSL task calls a model, it asks Desktop for the credentials; API keys and sign-ins are never written to the WSL disk. An API key you entered in WSL yourself takes precedence.
+- **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL; settings only WSL plugins have stay in WSL.
+- **Starts and stops with Desktop**: the WSL side starts when Desktop opens and exits about 5 seconds after Desktop closes.
+- **Follows DSH's language**: Chinese and English for now; other languages show English.
+
+## Requirements
+
+- DSH Desktop 0.2.x on Windows 10 or 11.
+- WSL 2 with a Linux distribution: Ubuntu, Debian or whichever you have.
+- A DSH in WSL whose version matches Desktop in its first two parts (for example both 0.2.x). Without one, the plugin lists the install commands; it can run them for you or hand them to the Windows DSH (step 3 below).
+
+## Install
+
+1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
+2. Quit Desktop completely, wait at least 5 seconds, then open it again.
+3. On the new-task page, switch the run location under the input box to WSL. The first time, "Set up the WSL environment" opens; choose one way:
+   - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; updates update both.
+   - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.
+
+   If Node.js or DSH is missing, the window lists the commands to run. Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
+4. Once connected, the loading note at the bottom of the sidebar goes away and the WSL folders and tasks appear in the sidebar.
+
+## Installing plugins in WSL
+
+Plugins → "WSL (distribution)" → enter an npm package name, git URL or local folder path in the install box → Check → Install. Windows paths are turned into WSL paths. When it says a restart is needed, quit Desktop completely, wait at least 5 seconds and open it again.
+
+## Updates
+
+- The plugin itself: published on npm and updated by DSH's own plugin updates. The bottom of the setup window shows its version and lets you turn automatic updates off.
+- The DSH in WSL follows Desktop's version. After Desktop updates, the setup window offers to update the WSL side.
+
+## Uninstall
+
+1. Desktop → Plugins → Installed → uninstall "WSL run mode", then restart Desktop.
+2. Remove what is left in WSL by hand:
+   - `~/.dsh-wsl`: connection files, logs, and in the separate-copy mode its DSH and data.
+   - In the reuse mode also `~/.dsh/profiles/desktop-wsl`, the profile the plugin created. Task data lives in `~/.dsh`, shared with your own dsh: **do not delete all of `~/.dsh`**.
+
+## When something goes wrong
+
+- When the bottom of the sidebar says the WSL side failed to start, click it to see the error.
+- The WSL side's log is `~/.dsh-wsl/run/desktop-wsl/daemon.log`.
+- Feedback: <https://github.com/herenfor/dsh-wsl/issues>
+
+## Known limitations
+
+- Tested only with DSH 0.2.2-rc.1. Desktop and the DSH in WSL must match in the first two parts of their versions.
+- In the separate-copy mode, WSL tasks are not shared with your own dsh, and tasks cannot be moved between the two ways yet.
+- When a WSL plugin's patch changes the configuration of an official component (rather than switching it off), that change does not apply in the Desktop window.
+- The interface of WSL plugins loads into the whole Desktop window, not only into WSL tasks.
+- Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background.
+
+## License
+
+MIT. The session ID field table is adapted from [dsh-ssh-workspaces](https://github.com/czp0312/dsh-ssh-workspace) (MIT); see `LICENSE` for its notice.

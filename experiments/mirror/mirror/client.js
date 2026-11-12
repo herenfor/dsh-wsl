@@ -3,7 +3,7 @@
 // - a penguin after the title of WSL folders and Sessions in the sidebar;
 // - the run location of new tasks on the new-task page.
 window.__ModuleLoader__.load({
-  id: 'dsh-wsl-mirror',
+  id: '@herenfor/dsh-wsl',
   factory: (require) => {
     const React = require('react')
     const h = React.createElement

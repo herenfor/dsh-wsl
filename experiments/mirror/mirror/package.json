@@ -1,16 +1,37 @@
 {
-  "name": "dsh-wsl-mirror",
-  "version": "0.0.0-experiment",
+  "name": "@herenfor/dsh-wsl",
+  "version": "0.1.0",
+  "description": "WSL run mode for DeepSeek Harness Desktop on Windows: run chosen tasks, and the plugins they use, in WSL from the Desktop window",
   "license": "MIT",
-  "private": true,
+  "icon": "./icon.svg",
   "type": "module",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "wsl"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/herenfor/dsh-wsl.git",
+    "directory": "experiments/mirror/mirror"
+  },
+  "homepage": "https://github.com/herenfor/dsh-wsl#readme",
+  "bugs": {
+    "url": "https://github.com/herenfor/dsh-wsl/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "dsh": ">=0.2.0-0 <0.3.0-0"
   },
-  "description": "Experiment: runs in the Desktop-side Host and merges the user plugin rows of a WSL Host's client module graph into its own, serving their bundles from the WSL Host.",
   "exports": {
     ".": "./index.mjs",
-    "./client": "./client.js"
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
@@ -31,6 +52,9 @@
     "*.mjs",
     "client.js",
     "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.zh.md",
     "transport/",
     "agent/"
   ]

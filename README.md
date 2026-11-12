@@ -1,24 +1,64 @@
 # dsh-wsl
 
-给 Windows 版 DeepSeek Harness（Desktop）加一个 **WSL 运行模式**：某个项目或会话选择 WSL 后，agent、会话和插件都在 WSL 内的 DSH Host 运行，界面仍是 Desktop 的窗口。核心是插件：Linux 插件装在 WSL 里原样可用，包括修改界面的插件，在 Desktop 里管理，不用浏览器。
+English | [中文](README.zh.md)
 
-只用插件和外部组件实现，不改官方代码。
+A **WSL run mode** for DeepSeek Harness Desktop on Windows: each task can run in Windows or in WSL. For a task set to WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window. Linux plugins installed in WSL work as they are, including ones that change the interface, and are managed on their own tab of Desktop's Plugins page.
 
-状态：设计和实验阶段，尚无可用版本。
+Built only from plugins and external components; no official code is changed.
 
-## 文档
+Status: beta, published on npm as `@herenfor/dsh-wsl`. Tested only with DSH 0.2.2-rc.1 so far.
 
-- [docs/bridge-plan.md](docs/bridge-plan.md)：桥接方案（传输、部署、按会话分流）。
-- [docs/plugin-management.md](docs/plugin-management.md)：插件管理方式，含界面镜像实验结果。
-- [docs/panel.md](docs/panel.md)：官方插件页同时管理两边的插件。
-- [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据（调研）。
-- [docs/session-routing.md](docs/session-routing.md)：按会话分流，每个任务在 Windows 或 WSL 中运行，侧栏列出两边。
-- [docs/deployment.md](docs/deployment.md)：首次安装，WSL 端缺什么、怎么补（复用或插件专用、安装与更新按钮、版本规则、插件自动更新）。
+## Use
 
-## 实验
+Installing, features, updates, uninstalling and known limitations are in the plugin's README: [experiments/mirror/mirror/README.md](experiments/mirror/mirror/README.md).
 
-- [experiments/mirror](experiments/mirror)：界面镜像。插件只装在 WSL，界面出现在 Desktop 窗口（已在 WSL 内两个 DSH 间验证，DSH 0.2.2-rc.1）。
+In short: Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl`, restart Desktop completely after the install, then switch the run location on the new-task page to WSL and follow the setup.
 
-## 许可证
+## How it works
 
-MIT，见 [LICENSE](LICENSE)。`experiments/mirror/mirror/ids.mjs` 中的 ID 字段表改编自 [dsh-ssh-workspaces](https://github.com/czp0312/dsh-ssh-workspace)（MIT），其版权声明随插件包一起分发（`experiments/mirror/mirror/LICENSE`）。
+```
+Windows                                         WSL
+Desktop (DSH Host + page)                       DSH Host (profile desktop-wsl)
+  └ plugin @herenfor/dsh-wsl                       └ plugin dsh-wsl-agent
+      ├ per-task routing: WSL tasks go to WSL         ├ reports WSL's page modules, routes and plugins
+      ├ merges both sides' sidebar, modules,          └ credential broker: asks Desktop when needed
+      │ settings
+      └ one wsl.exe connection  ◄──────────────►  resident daemon, exits 5 s after Desktop closes
+```
+
+- Transport: one multiplexed connection over `wsl.exe`'s standard input and output, with a resident process on the WSL side, the same approach as Claude Code Desktop's WSL mode.
+- Session IDs: WSL sessions and folders carry a `wsl:` prefix on the page; forwarded requests are rewritten by field and by value.
+- Credentials: never copied into WSL; the WSL side gets a credential broker that asks Desktop when it needs one.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `experiments/mirror/mirror/` | The Desktop-side plugin, the package published to npm: routing, merging, the setup window, the WSL plugins tab, page code in `client.js` |
+| `experiments/mirror/agent/` | The WSL-side plugin `dsh-wsl-agent`, carried into WSL by the Desktop-side plugin |
+| `experiments/transport/` | The `wsl.exe` connection: multiplexing (`mux.mjs`), the Desktop end (`client.mjs`), the WSL daemon (`daemon.mjs`) |
+| `experiments/mirror/tests/` | Unit tests |
+| `scripts/assemble.sh` | Copies transport and agent into the plugin package (run before publishing) |
+| `scripts/sync-windows.sh` | Development: assembles, then copies the package into a Windows test folder |
+| `docs/` | Design and experiment notes (in Chinese) |
+
+## Development
+
+```bash
+node --test experiments/mirror/tests/*.test.mjs
+```
+
+Before publishing, run `scripts/assemble.sh` to copy the latest `experiments/transport` and `experiments/mirror/agent` files into the package's `transport/` and `agent/`, then run `npm publish` in `experiments/mirror/mirror`. (`scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder that a Desktop links to.)
+
+## Documents (in Chinese)
+
+- [docs/bridge-plan.md](docs/bridge-plan.md): the bridge (transport, deployment, per-session routing).
+- [docs/session-routing.md](docs/session-routing.md): per-session routing; each task runs in Windows or WSL, and the sidebar lists both.
+- [docs/plugin-management.md](docs/plugin-management.md): plugin management and the page mirror.
+- [docs/panel.md](docs/panel.md): the Plugins page (now separate Windows and WSL tabs).
+- [docs/credentials.md](docs/credentials.md): how WSL sessions use Desktop's credentials.
+- [docs/deployment.md](docs/deployment.md): first-run setup, version rules, plugin self-update, interface language.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The ID field table in `experiments/mirror/mirror/ids.mjs` is adapted from [dsh-ssh-workspaces](https://github.com/czp0312/dsh-ssh-workspace) (MIT); its copyright notice ships with the plugin package (`experiments/mirror/mirror/LICENSE`).

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "WSL run mode",
+    "description": "Run chosen tasks in WSL from the Desktop window, with WSL's plugins managed on their own tab.",
+    "detail": "README.md"
+  }
+}

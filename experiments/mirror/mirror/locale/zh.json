@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "WSL 运行模式",
+    "description": "在 Desktop 窗口里把选中的任务放到 WSL 中运行，WSL 里的插件单独管理。",
+    "detail": "README.zh.md"
+  }
+}

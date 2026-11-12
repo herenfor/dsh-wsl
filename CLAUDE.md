@@ -8,6 +8,10 @@
 - 测过 DSH 0.2.2-rc.1 和 rc.2；Desktop 和 WSL 里的 DSH 版本前两段必须一样。
 - 每个版本修了什么、为什么，见 [docs/deployment.md](docs/deployment.md) 后半部分（一个 bug 一节）。设计决定见 `docs/` 其他文档。
 
+## 正在做的
+
+**跨两边的兼容扫描**：目标、设计和进度见 [docs/cross-host-scan.md](docs/cross-host-scan.md)。先扫描出报告、和所有者定规则，再改代码；随 0.1.9 发布。起因是"把 WSL 独有的预设设为新任务默认后，Windows 任务建不出来"。
+
 ## 代码入口
 
 | 文件 | 内容 |

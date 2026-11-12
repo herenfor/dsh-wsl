@@ -1,26 +1,51 @@
+<div align="center">
+
+<img src="experiments/mirror/mirror/icon.svg" width="72" alt="">
+
 # dsh-wsl
 
-[English](README.md) | 中文
+**让 Windows 版 DeepSeek Harness 把任务放进 WSL 运行，界面还是 Desktop 的窗口**
 
-给 Windows 版 DeepSeek Harness（Desktop）加一个 **WSL 运行模式**：每个文件夹可以选在 Windows 还是 WSL 里运行。在 WSL 运行的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。Linux 插件装在 WSL 里原样可用，包括改界面的插件，在 Desktop 的插件页单独管理。
+[![npm](https://img.shields.io/npm/v/@herenfor/dsh-wsl?label=npm&color=cb3837)](https://www.npmjs.com/package/@herenfor/dsh-wsl) ![DSH 0.2.x](https://img.shields.io/badge/DSH-0.2.x-4d6bfe) ![测试版](https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E6%B5%8B%E8%AF%95%E7%89%88-orange) [![MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
-只用插件和外部组件实现，不改官方代码。
+[English](README.md) · 中文
 
-状态：测试版，npm 包名 `@herenfor/dsh-wsl`。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。
+</div>
 
 ![新任务页：侧栏同时列出 Windows 和 WSL 的任务，输入框下方选运行位置；右下角的桌宠是装在 WSL 里的插件](docs/screenshots/home-zh.webp)
 
-![插件页的 WSL 标签页](docs/screenshots/plugins-zh.webp)
+<sub>截图来自测试环境，仅作展示。图中的第三方插件见文末「截图说明」。</sub>
 
-![装在 WSL 里的 DS Bot，专属界面在 Desktop 窗口里照常使用；Bot 在 WSL 里运行命令查看环境](docs/screenshots/bot-zh.webp)
+## 亮点
 
-<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。DS Bot 截图里的回复由测试用的本地模拟模型生成，表格中的系统信息是命令在 WSL 里实际运行的输出。</sub>
+- **按文件夹选运行位置**：在输入框下方切换 Windows 或 WSL；WSL 里的文件夹自动在 WSL 运行。
+- **一个窗口管两边**：侧栏、定时任务、设置里的选项都同时列出 Windows 和 WSL 的。
+- **Linux 插件照常用**：装在 WSL 里的插件，包括改界面的，在 Desktop 窗口里也能用；插件页有单独的 WSL 标签页。
+- **凭据不进 WSL**：WSL 任务用的模型凭据向 Desktop 取，不写进 WSL 的磁盘。
+- **不改官方代码**：只用插件和外部组件实现，跟着 Desktop 一起启动和退出。
 
-## 使用
+## 截图
 
-安装、功能、更新、卸载和已知限制，见插件说明：[experiments/mirror/mirror/README.zh.md](experiments/mirror/mirror/README.zh.md)。
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/picker-zh.webp" alt="输入框下方选运行位置"><br><sub>输入框下方选运行位置</sub></td>
+<td width="50%"><img src="docs/screenshots/setup-zh.webp" alt="首次设置：复用你装的 dsh，或用插件专用的一份"><br><sub>首次设置：复用你装的 dsh，或用插件专用的一份</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/plugins-zh.webp" alt="插件页的 WSL 标签页"><br><sub>插件页的 WSL 标签页</sub></td>
+<td width="50%"><img src="docs/screenshots/bot-zh.webp" alt="装在 WSL 里的 DS Bot，专属界面在 Desktop 窗口里照常使用"><br><sub>装在 WSL 里的 DS Bot，专属界面在 Desktop 窗口里照常使用</sub></td>
+</tr>
+</table>
 
-简单说：Desktop → 插件 → 添加插件 → 安装第三方插件，填 `@herenfor/dsh-wsl`，安装后完全重启 Desktop，再在新任务页把运行位置切到 WSL，按提示完成设置。
+## 快速开始
+
+1. Desktop → 插件 → 添加插件 → 安装第三方插件，填 `@herenfor/dsh-wsl`，然后安装。
+2. 完全退出 Desktop（包括系统托盘里的），等 5 秒以上再打开。
+3. 在新任务页把输入框下方的运行位置切到 WSL，按「设置 WSL 运行环境」窗口的提示完成。
+
+需要 Windows 10 或 11 上的 DSH Desktop 0.2.x 和 WSL 2。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。功能细节、其他安装方式、更新、卸载、排错和已知限制，见[插件说明](experiments/mirror/mirror/README.zh.md)。
+
+---
 
 ## 工作方式
 
@@ -83,6 +108,10 @@ scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1
 - [docs/credentials.md](docs/credentials.md)：WSL 会话怎么使用 Desktop 的凭据。
 - [docs/deployment.md](docs/deployment.md)：首次设置、版本规则、插件更新、界面语言。
 - [docs/cross-host-scan.md](docs/cross-host-scan.md) 和 [docs/cross-host-rules.md](docs/cross-host-rules.md)：两边差异的扫描，以及处理这些差异的规则（对照 VS Code Remote 和 Claude Code）。
+
+## 截图说明
+
+截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。DS Bot 截图里的回复由测试用的本地模拟模型生成，表格中的系统信息是命令在 WSL 里实际运行的输出。
 
 ## 许可证
 

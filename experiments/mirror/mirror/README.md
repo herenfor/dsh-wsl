@@ -2,30 +2,21 @@
 
 English | [中文](README.zh.md)
 
-Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window.
+Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task that runs in WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window.
 
 > Beta. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
 
 ![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-en.webp)
 
-<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors. In the DS Bot screenshot, the replies come from a local stand-in model used for testing; the system details in the table are the real output of the command run in WSL.</sub>
+<sub>Screenshots from a test environment, for illustration only. The third-party plugins shown are listed under "Screenshot credits" at the end.</sub>
 
-## What it does
+## Highlights
 
-- **Choose where each folder runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. The choice is kept per folder: new tasks in that folder run there from then on, and existing tasks stay where they are. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
-- **Windows folders can run in WSL too**: WSL reads and writes them through paths like `/mnt/c/…`, which is slower than a folder inside WSL, and a note under the input box says so. The sidebar still shows it as one folder, with both sides' tasks under it.
-- **Add WSL folders**: when adding a folder, choose a Windows folder or a WSL folder. A WSL folder is picked by browsing the Linux file system right in Desktop.
-- **Both sides in one list**: the sidebar lists the folders and tasks of Windows and WSL together, with a small penguin on WSL ones. Approvals, questions, subagents and live titles work as in any task.
-- **WSL plugins on their own tab**: the Plugins page gets a "WSL (distribution)" tab to install, enable, disable and uninstall plugins in WSL, with a page per plugin showing its description and the state of each component. The official Installed tab still covers Windows only; the two sides do not affect each other. Plugins installed only in WSL, including ones that change the interface, work in the Desktop window too.
-- **Desktop's model credentials**: when a WSL task calls a model, it asks Desktop for the credentials; API keys and sign-ins are never written to the WSL disk. An API key you entered in WSL yourself takes precedence.
-- **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL. Settings of a plugin installed only in WSL show up on Desktop's settings page too, and changes made there are saved straight to WSL.
-- **Both sides' choices in one list**: where you pick one entry from a list (the default preset, the default permission preset, the search service, the model), the list shows both sides' entries, with " · WSL" on those only WSL has. When you pick one that only one side has, tasks on the other side use that side's own default, and the presets page says what the other side uses.
-- **MCP servers set per side**: an MCP server's command, paths and environment variables differ between Windows and WSL, so they are not copied from Windows. Set up WSL's MCP servers at the bottom of the "WSL (distribution)" tab on the Plugins page; they serve only tasks that run in WSL.
-- **Scheduled tasks together**: the scheduled tasks page lists both sides' scheduled tasks, and viewing, editing, running now and deleting one go to the side it lives on. A scheduled task that starts a new task is created on the side where the chosen folder runs.
-- **Starts and stops with Desktop**: the WSL side starts when Desktop opens and exits about 5 seconds after Desktop closes.
-- **Follows DSH's language**: Chinese and English for now; other languages show English.
-
-![The run-location menu](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-en.webp)
+- **Run location per folder**: switch between Windows and WSL under the input box; folders inside WSL run in WSL by themselves.
+- **One window for both sides**: the sidebar, scheduled tasks and the choices in Settings list Windows and WSL together.
+- **Linux plugins just work**: plugins installed in WSL, including ones that change the interface, work in the Desktop window, and have their own WSL tab on the Plugins page.
+- **Credentials stay out of WSL**: WSL tasks get model credentials from Desktop; nothing is written to the WSL disk.
+- **No official code changed**: built only from plugins and external components, starting and stopping with Desktop.
 
 ## Requirements
 
@@ -57,6 +48,34 @@ The install box in step 1 also takes these, but a plugin installed this way cann
 
 - From GitHub: `github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`, or for a given version `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`.
 - From a local folder: download the repository to Windows and enter the full path of its `experiments/mirror/mirror` folder.
+
+## Features in detail
+
+### Run location and folders
+
+- **Choose where each folder runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. The choice is kept per folder: new tasks in that folder run there from then on, and existing tasks stay where they are. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
+- **Windows folders can run in WSL too**: WSL reads and writes them through paths like `/mnt/c/…`, which is slower than a folder inside WSL, and a note under the input box says so. The sidebar still shows it as one folder, with both sides' tasks under it.
+- **Add WSL folders**: when adding a folder, choose a Windows folder or a WSL folder. A WSL folder is picked by browsing the Linux file system right in Desktop.
+
+![The run-location menu](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-en.webp)
+
+### Tasks and the sidebar
+
+- **Both sides in one list**: the sidebar lists the folders and tasks of Windows and WSL together, with a small penguin on WSL ones. Approvals, questions, subagents and live titles work as in any task.
+- **Scheduled tasks together**: the scheduled tasks page lists both sides' scheduled tasks, and viewing, editing, running now and deleting one go to the side it lives on. A scheduled task that starts a new task is created on the side where the chosen folder runs.
+- **Starts and stops with Desktop**: the WSL side starts when Desktop opens and exits about 5 seconds after Desktop closes.
+
+### Plugins
+
+- **WSL plugins on their own tab**: the Plugins page gets a "WSL (distribution)" tab to install, enable, disable and uninstall plugins in WSL, with a page per plugin showing its description and the state of each component. The official Installed tab still covers Windows only; the two sides do not affect each other. Plugins installed only in WSL, including ones that change the interface, work in the Desktop window too. To install them, see "Installing plugins in WSL" below.
+- **MCP servers set per side**: an MCP server's command, paths and environment variables differ between Windows and WSL, so they are not copied from Windows. Set up WSL's MCP servers at the bottom of the "WSL (distribution)" tab on the Plugins page; they serve only tasks that run in WSL.
+
+### Settings and credentials
+
+- **Desktop's model credentials**: when a WSL task calls a model, it asks Desktop for the credentials; API keys and sign-ins are never written to the WSL disk. An API key you entered in WSL yourself takes precedence.
+- **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL. Settings of a plugin installed only in WSL show up on Desktop's settings page too, and changes made there are saved straight to WSL.
+- **Both sides' choices in one list**: where you pick one entry from a list (the default preset, the default permission preset, the search service, the model), the list shows both sides' entries, with " · WSL" on those only WSL has. When you pick one that only one side has, tasks on the other side use that side's own default, and the presets page says what the other side uses.
+- **Follows DSH's language**: Chinese and English for now; other languages show English.
 
 ## Installing plugins in WSL
 
@@ -105,6 +124,10 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 - Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background, and WSL's scheduled tasks run only while Desktop is open.
 - Referring to another task with @ works only within one side: a WSL task is offered WSL tasks, a Windows task Windows tasks.
 - The "All plugins" page in Settings lists Windows plugins only; WSL plugins are on the "WSL (distribution)" tab.
+
+## Screenshot credits
+
+Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors. In the DS Bot screenshot, the replies come from a local stand-in model used for testing; the system details in the table are the real output of the command run in WSL.
 
 ## License
 

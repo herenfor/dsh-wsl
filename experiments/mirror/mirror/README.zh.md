@@ -2,30 +2,21 @@
 
 [English](README.md) | 中文
 
-让 Windows 版 DeepSeek Harness（Desktop）在 WSL 里运行任务。选了 WSL 的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。
+让 Windows 版 DeepSeek Harness（Desktop）在 WSL 里运行任务。在 WSL 运行的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。
 
 > 测试版。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。遇到问题欢迎到 [GitHub](https://github.com/herenfor/dsh-wsl/issues) 反馈。
 
 ![新任务页：侧栏同时列出 Windows 和 WSL 的任务，输入框下方选运行位置；右下角的桌宠是装在 WSL 里的插件](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-zh.webp)
 
-<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。DS Bot 截图里的回复由测试用的本地模拟模型生成，表格中的系统信息是命令在 WSL 里实际运行的输出。</sub>
+<sub>截图来自测试环境，仅作展示。图中的第三方插件见文末「截图说明」。</sub>
 
-## 能做什么
+## 亮点
 
-- **每个文件夹选在哪里运行**：在新任务页的输入框下方选「Windows」或「WSL（发行版名）」。选择按文件夹记住，这个文件夹之后新建的任务都在那里运行，已有的任务留在原来那边。WSL 里的文件夹（`\\wsl.localhost\…`）总是在 WSL 中运行。
-- **Windows 上的文件夹也能在 WSL 运行**：WSL 通过 `/mnt/c/…` 这样的路径读写它，比放在 WSL 里慢，输入框下方会提示。侧栏里它仍是一个文件夹，两边的任务都列在下面。
-- **添加 WSL 文件夹**：添加文件夹时先选 Windows 文件夹或 WSL 文件夹。选 WSL 文件夹会在 Desktop 里直接浏览 Linux 文件系统。
-- **两边的任务列在一起**：侧栏同时列出 Windows 和 WSL 的文件夹和任务，WSL 的带小企鹅标记。审批、提问、子智能体、标题实时更新，都和普通任务一样。
-- **WSL 里的插件单独管理**：插件页多一个「WSL（发行版名）」标签页，可以安装、启用、停用、卸载 WSL 里的插件，点进去能看说明和每个组件的运行状态。官方的「已安装」页仍然只管 Windows，两边互不影响。只装在 WSL 里的插件，包括改界面的插件，也能在 Desktop 窗口里使用。
-- **用 Desktop 的模型凭据**：WSL 里的任务调用模型时，向 Desktop 取凭据，API Key 和登录信息不会写进 WSL 的磁盘。在 WSL 里自己填过 API Key 的，用 WSL 自己的。
-- **设置以 Desktop 为准**：模型、主题、语言等 Desktop 上能调的设置，单向同步到 WSL。只装在 WSL 里的插件，它的设置也出现在 Desktop 的设置页里，在那里改会直接存到 WSL。
-- **两边的选项列在一起**：默认预设、默认权限预设、搜索服务、模型这些"从清单里选一项"的地方，同时列出两边的选项，只有 WSL 才有的标「 · WSL」。选了只有一边才有的，另一边的任务用那边自己的默认，预设页上会注明另一边用的是什么。
-- **MCP 服务器各设各的**：MCP 服务器的命令、路径和环境变量在 Windows 和 WSL 不通用，所以不从 Windows 复制。WSL 的 MCP 服务器在插件页「WSL（发行版名）」标签页底部单独设置，只用于在 WSL 运行的任务。
-- **定时任务也在一起**：定时任务页同时列出两边的定时任务，查看、编辑、立即运行、删除都送回它所在的一边。会新建任务的定时任务，按所选文件夹的运行位置建在对应的一边。
-- **跟着 Desktop 启停**：打开 Desktop 时自动启动 WSL 端，关闭 Desktop 约 5 秒后 WSL 端退出。
-- **界面语言跟随 DSH**：目前有中文和英文，其他语言显示英文。
-
-![运行位置菜单](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-zh.webp)
+- **按文件夹选运行位置**：在输入框下方切换 Windows 或 WSL；WSL 里的文件夹自动在 WSL 运行。
+- **一个窗口管两边**：侧栏、定时任务、设置里的选项都同时列出 Windows 和 WSL 的。
+- **Linux 插件照常用**：装在 WSL 里的插件，包括改界面的，在 Desktop 窗口里也能用；插件页有单独的 WSL 标签页。
+- **凭据不进 WSL**：WSL 任务用的模型凭据向 Desktop 取，不写进 WSL 的磁盘。
+- **不改官方代码**：只用插件和外部组件实现，跟着 Desktop 一起启动和退出。
 
 ## 需要什么
 
@@ -57,6 +48,34 @@
 
 - 从 GitHub 安装：`github:herenfor/dsh-wsl#path:/experiments/mirror/mirror`。指定版本时写成 `github:herenfor/dsh-wsl#v0.1.0&path:/experiments/mirror/mirror`。
 - 从本地文件夹安装：把仓库下载到 Windows 上，填 `experiments/mirror/mirror` 文件夹的完整路径。
+
+## 功能详情
+
+### 运行位置和文件夹
+
+- **每个文件夹选在哪里运行**：在新任务页的输入框下方选「Windows」或「WSL（发行版名）」。选择按文件夹记住，这个文件夹之后新建的任务都在那里运行，已有的任务留在原来那边。WSL 里的文件夹（`\\wsl.localhost\…`）总是在 WSL 中运行。
+- **Windows 上的文件夹也能在 WSL 运行**：WSL 通过 `/mnt/c/…` 这样的路径读写它，比放在 WSL 里慢，输入框下方会提示。侧栏里它仍是一个文件夹，两边的任务都列在下面。
+- **添加 WSL 文件夹**：添加文件夹时先选 Windows 文件夹或 WSL 文件夹。选 WSL 文件夹会在 Desktop 里直接浏览 Linux 文件系统。
+
+![运行位置菜单](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-zh.webp)
+
+### 任务和侧栏
+
+- **两边的任务列在一起**：侧栏同时列出 Windows 和 WSL 的文件夹和任务，WSL 的带小企鹅标记。审批、提问、子智能体、标题实时更新，都和普通任务一样。
+- **定时任务也在一起**：定时任务页同时列出两边的定时任务，查看、编辑、立即运行、删除都送回它所在的一边。会新建任务的定时任务，按所选文件夹的运行位置建在对应的一边。
+- **跟着 Desktop 启停**：打开 Desktop 时自动启动 WSL 端，关闭 Desktop 约 5 秒后 WSL 端退出。
+
+### 插件
+
+- **WSL 里的插件单独管理**：插件页多一个「WSL（发行版名）」标签页，可以安装、启用、停用、卸载 WSL 里的插件，点进去能看说明和每个组件的运行状态。官方的「已安装」页仍然只管 Windows，两边互不影响。只装在 WSL 里的插件，包括改界面的插件，也能在 Desktop 窗口里使用。怎么装见下面「在 WSL 里装插件」。
+- **MCP 服务器各设各的**：MCP 服务器的命令、路径和环境变量在 Windows 和 WSL 不通用，所以不从 Windows 复制。WSL 的 MCP 服务器在插件页「WSL（发行版名）」标签页底部单独设置，只用于在 WSL 运行的任务。
+
+### 设置和凭据
+
+- **用 Desktop 的模型凭据**：WSL 里的任务调用模型时，向 Desktop 取凭据，API Key 和登录信息不会写进 WSL 的磁盘。在 WSL 里自己填过 API Key 的，用 WSL 自己的。
+- **设置以 Desktop 为准**：模型、主题、语言等 Desktop 上能调的设置，单向同步到 WSL。只装在 WSL 里的插件，它的设置也出现在 Desktop 的设置页里，在那里改会直接存到 WSL。
+- **两边的选项列在一起**：默认预设、默认权限预设、搜索服务、模型这些"从清单里选一项"的地方，同时列出两边的选项，只有 WSL 才有的标「 · WSL」。选了只有一边才有的，另一边的任务用那边自己的默认，预设页上会注明另一边用的是什么。
+- **界面语言跟随 DSH**：目前有中文和英文，其他语言显示英文。
 
 ## 在 WSL 里装插件
 
@@ -105,6 +124,10 @@ Desktop 在 WSL 里用自己的 profile（`desktop-wsl`）运行任务，插件�
 - 关闭 Desktop 后 WSL 端也会退出，WSL 任务不会在后台继续运行；WSL 的定时任务也只在 Desktop 开着时运行。
 - 用 @ 引用其他任务时，只能引用同一边的任务：WSL 任务的候选里只有 WSL 任务，Windows 任务的候选里只有 Windows 任务。
 - 设置里「全部插件」一页只列 Windows 的插件，WSL 的插件在「WSL（发行版名）」标签页里看。
+
+## 截图说明
+
+截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。DS Bot 截图里的回复由测试用的本地模拟模型生成，表格中的系统信息是命令在 WSL 里实际运行的输出。
 
 ## 许可证
 

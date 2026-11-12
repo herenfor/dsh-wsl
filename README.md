@@ -1,26 +1,51 @@
+<div align="center">
+
+<img src="experiments/mirror/mirror/icon.svg" width="72" alt="">
+
 # dsh-wsl
 
-English | [中文](README.zh.md)
+**Run DeepSeek Harness tasks in WSL from the Windows Desktop window**
 
-A **WSL run mode** for DeepSeek Harness Desktop on Windows: each folder can be set to run its tasks in Windows or in WSL. For a task that runs in WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window. Linux plugins installed in WSL work as they are, including ones that change the interface, and are managed on their own tab of Desktop's Plugins page.
+[![npm](https://img.shields.io/npm/v/@herenfor/dsh-wsl?label=npm&color=cb3837)](https://www.npmjs.com/package/@herenfor/dsh-wsl) ![DSH 0.2.x](https://img.shields.io/badge/DSH-0.2.x-4d6bfe) ![beta](https://img.shields.io/badge/status-beta-orange) [![MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
-Built only from plugins and external components; no official code is changed.
+English · [中文](README.zh.md)
 
-Status: beta, published on npm as `@herenfor/dsh-wsl`. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far.
+</div>
 
 ![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](docs/screenshots/home-en.webp)
 
-![The WSL tab on the Plugins page](docs/screenshots/plugins-en.webp)
+<sub>Screenshots from a test environment, for illustration only. The third-party plugins shown are listed under "Screenshot credits" at the end.</sub>
 
-![DS Bot installed in WSL, with its own interface working in the Desktop window; the Bot runs a command in WSL to check the environment](docs/screenshots/bot-en.webp)
+## Highlights
 
-<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors. In the DS Bot screenshot, the replies come from a local stand-in model used for testing; the system details in the table are the real output of the command run in WSL.</sub>
+- **Run location per folder**: switch between Windows and WSL under the input box; folders inside WSL run in WSL by themselves.
+- **One window for both sides**: the sidebar, scheduled tasks and the choices in Settings list Windows and WSL together.
+- **Linux plugins just work**: plugins installed in WSL, including ones that change the interface, work in the Desktop window, and have their own WSL tab on the Plugins page.
+- **Credentials stay out of WSL**: WSL tasks get model credentials from Desktop; nothing is written to the WSL disk.
+- **No official code changed**: built only from plugins and external components, starting and stopping with Desktop.
 
-## Use
+## Screenshots
 
-Installing, features, updates, uninstalling and known limitations are in the plugin's README: [experiments/mirror/mirror/README.md](experiments/mirror/mirror/README.md).
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/picker-en.webp" alt="Pick the run location under the input box"><br><sub>Pick the run location under the input box</sub></td>
+<td width="50%"><img src="docs/screenshots/setup-en.webp" alt="First-run setup: reuse your own dsh or use a copy of its own"><br><sub>First-run setup: reuse your own dsh or use a copy of its own</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/plugins-en.webp" alt="The WSL tab on the Plugins page"><br><sub>The WSL tab on the Plugins page</sub></td>
+<td width="50%"><img src="docs/screenshots/bot-en.webp" alt="DS Bot installed in WSL, with its own interface working in the Desktop window"><br><sub>DS Bot installed in WSL, with its own interface working in the Desktop window</sub></td>
+</tr>
+</table>
 
-In short: Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl`, restart Desktop completely after the install, then switch the run location on the new-task page to WSL and follow the setup.
+## Quick start
+
+1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
+2. Quit Desktop completely (in the system tray too), wait at least 5 seconds, then open it again.
+3. On the new-task page, switch the run location under the input box to WSL and follow the "Set up the WSL environment" window.
+
+Needs DSH Desktop 0.2.x on Windows 10 or 11, and WSL 2. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Feature details, other ways to install, updates, uninstalling, troubleshooting and known limitations are in the [plugin's README](experiments/mirror/mirror/README.md).
+
+---
 
 ## How it works
 
@@ -84,6 +109,10 @@ The workflow publishes only once the package's trusted publisher is set on npmjs
 - [docs/credentials.md](docs/credentials.md): how WSL sessions use Desktop's credentials.
 - [docs/deployment.md](docs/deployment.md): first-run setup, version rules, plugin self-update, interface language.
 - [docs/cross-host-scan.md](docs/cross-host-scan.md) and [docs/cross-host-rules.md](docs/cross-host-rules.md): the scan for differences between the two sides, and the rules that settle them, compared with VS Code Remote and Claude Code.
+
+## Screenshot credits
+
+Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors. In the DS Bot screenshot, the replies come from a local stand-in model used for testing; the system details in the table are the real output of the command run in WSL.
 
 ## License
 

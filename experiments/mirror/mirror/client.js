@@ -61,6 +61,13 @@ window.__ModuleLoader__.load({
         phasePending: '等待启动', phaseLoading: '正在启动', phaseActive: '运行中', phaseFailed: '启动失败', phaseUnloading: '正在停止', rowOff: '已关闭', rowIdle: '未运行',
         partsTotal: '共 {count} 个', partsRunning: '{count} 运行中', partsOff: '{count} 已关闭', partsFailed: '{count} 启动失败',
         detailFailed: '说明文档读取失败', docTitle: '详细介绍', docLoading: '正在读取说明…', retry: '重试', codeBlock: '代码', wrap: '自动换行', unwrap: '取消换行', footnotes: '脚注',
+        setupReuseMissing: '找不到之前复用的 dsh', reuseMissingBody: '之前选的是复用你装的 dsh，但这次在 WSL 里没找到它。为了不让任务悄悄换到另一份数据里，WSL 端先不启动。',
+        reuseMissingWhat: '可以填它现在的位置，或者改用插件专用的一份（任务不和你自己的 dsh 同步）。', usePrivate: '改用插件专用一份', entryNotFound: '填的位置没有找到 DSH：{entry}',
+        entryLabel: '要复用的 dsh 没被找到，或者想用另一份？填它的位置：', entryLabelPrivate: 'WSL 里已经装了 dsh，只是没被找到？填它的位置就能复用它，不用再装一份：',
+        entryHint: '可以填命令名（dsh）、DSH 的包文件夹，或包里的 lib/bin.js，例如 ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh。用 WSL 里的路径。', entryUse: '使用这份', entryClear: '清除',
+        reuseWhere: '位置：{dir}', needsNodeMin: 'WSL 里没有找到 Node.js {min} 或更新的版本（这份 DSH 要求的）。', needsNodeManager: '用 nvm 等工具管理 Node 的话，也可以自己装一个 Node {major}（例如 nvm install {major}），再点「重新检查」，插件会找到它。',
+        checkedTitle: '查过的位置', checkedNode: 'Node.js（需要 {min} 或更新）', checkedNone: '（一个也没找到）', seenFound: '找到', seenMissing: '不存在', seenNotDsh: '不是 DSH', nodeUsable: '可用', nodeTooOld: '版本太低',
+        probeLogAt: '完整的检查输出在 Windows 上的 ', reuseLocal: '你的 dsh 不是 npm 全局安装的（在 {dir}），插件不替你更新它，以免装出第二份。请用你自己的方式把它更新到 {version}，再点「重新检查」。',
         backTo: '返回 {distro} 插件', detailNotConnected: '{distro} 端还没有连接。', detailMissing: '{distro} 里没有找到 {name}，可能已经卸载。', experimental: '实验性',
         enableIn: '在 {distro} 中启用 {name}', rowToggle: '开关组件 {name}', parts: '包含的组件', partsDisabled: '插件停用时，组件开关不可用。', source: '来源',
       },
@@ -111,6 +118,13 @@ window.__ModuleLoader__.load({
         phasePending: 'Waiting to start', phaseLoading: 'Starting', phaseActive: 'Running', phaseFailed: 'Failed to start', phaseUnloading: 'Stopping', rowOff: 'Off', rowIdle: 'Not running',
         partsTotal: '{count} in total', partsRunning: '{count} running', partsOff: '{count} off', partsFailed: '{count} failed',
         detailFailed: 'Could not read the description', docTitle: 'Details', docLoading: 'Reading the description…', retry: 'Retry', codeBlock: 'Code', wrap: 'Wrap lines', unwrap: 'Unwrap lines', footnotes: 'Footnotes',
+        setupReuseMissing: 'the dsh you chose to reuse was not found', reuseMissingBody: "You chose to reuse your own dsh, but it was not found in WSL this time. The WSL side stays off rather than quietly switching to another copy's data.",
+        reuseMissingWhat: "Enter where it is now, or switch to the plugin's own copy (its tasks are not shared with your own dsh).", usePrivate: "Use the plugin's own copy", entryNotFound: 'No DSH was found at the location you entered: {entry}',
+        entryLabel: 'Your dsh was not found, or you want another one? Enter its location:', entryLabelPrivate: 'Already have dsh in WSL, but it was not found? Enter its location to reuse it instead of installing another copy:',
+        entryHint: 'A command name (dsh), the DSH package folder, or lib/bin.js in it, such as ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh. Use the path as WSL sees it.', entryUse: 'Use this one', entryClear: 'Clear',
+        reuseWhere: 'Location: {dir}', needsNodeMin: 'No Node.js {min} or newer was found in WSL (this DSH requires it).', needsNodeManager: 'If you manage Node with nvm or a similar tool, you can also install Node {major} yourself (for example nvm install {major}) and click "Check again"; the plugin finds it.',
+        checkedTitle: 'Where setup looked', checkedNode: 'Node.js (needs {min} or newer)', checkedNone: '(none found)', seenFound: 'found', seenMissing: 'not there', seenNotDsh: 'not DSH', nodeUsable: 'usable', nodeTooOld: 'too old',
+        probeLogAt: 'The full check output is on Windows at ', reuseLocal: 'Your dsh is not an npm global install (it is in {dir}), so the plugin does not update it, which would put a second copy beside it. Update it to {version} your own way, then click "Check again".',
         backTo: 'Back to {distro} plugins', detailNotConnected: '{distro} is not connected.', detailMissing: '{name} was not found in {distro}; it may have been uninstalled.', experimental: 'Experimental',
         enableIn: 'Enable {name} in {distro}', rowToggle: 'Turn component {name} on or off', parts: 'Components', partsDisabled: 'Component switches are unavailable while the plugin is disabled.', source: 'Source',
       },
@@ -324,13 +338,13 @@ window.__ModuleLoader__.load({
     // ---- first-run setup of the WSL side (/wsl-bridge/setup). Nothing is downloaded by the plugin: the person runs the
     // commands shown, or hands them to a Windows DSH task, then re-checks.
     const SETUP_KEYS = {
-      'no-wsl': 'setupNoWsl', 'no-distro': 'setupNoDistro', wsl1: 'setupWsl1', choose: 'setupChoose', 'needs-node': 'setupNeedsDsh', 'needs-dsh': 'setupNeedsDsh',
+      'no-wsl': 'setupNoWsl', 'no-distro': 'setupNoDistro', wsl1: 'setupWsl1', choose: 'setupChoose', 'reuse-missing': 'setupReuseMissing', 'needs-node': 'setupNeedsDsh', 'needs-dsh': 'setupNeedsDsh',
       'version-mismatch': 'setupVersionMismatch', 'desktop-outdated': 'setupDesktopOutdated', installing: 'setupInstalling', checking: 'setupChecking',
       starting: 'setupStarting', error: 'setupError', connected: 'setupConnected', 'restart-required': 'setupRestart',
     }
     /** One line on a setup state, or undefined for a state without one. */
     const setupNote = (state) => (SETUP_KEYS[state] ? t(SETUP_KEYS[state]) : undefined)
-    const SETUP_OPENS = new Set(['no-wsl', 'no-distro', 'wsl1', 'choose', 'needs-node', 'needs-dsh', 'version-mismatch', 'desktop-outdated', 'installing', 'error'])
+    const SETUP_OPENS = new Set(['no-wsl', 'no-distro', 'wsl1', 'choose', 'reuse-missing', 'needs-node', 'needs-dsh', 'version-mismatch', 'desktop-outdated', 'installing', 'error'])
     const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
     function CodeBlock({ text }) {
       const [copied, setCopied] = React.useState(false)
@@ -347,6 +361,7 @@ window.__ModuleLoader__.load({
       const [s, setS] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
       const [choosing, setChoosing] = React.useState(false)   // "change" from a connected state
+      const [entry, setEntry] = React.useState(null)          // the dsh location being typed (null: the saved one)
       const load = (body) => { if (body) setBusy(true); return api('wsl-bridge/setup', body).then(setS, (e) => setS({ state: 'error', error: String(e) })).finally(() => { if (body) setBusy(false) }) }
       // Commands and prompts come worded by the Host, so a language switch reads them again.
       React.useEffect(() => { void load() }, [language])
@@ -372,6 +387,34 @@ window.__ModuleLoader__.load({
         style: { display: 'flex', flexDirection: 'column', gap: 4, width: '100%', padding: '12px 14px', border: `1px solid ${current ? 'var(--dsw-alias-button-info-fill, #3b6fe0)' : BORDER}`, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: busy ? 'default' : 'pointer' },
       }, h('span', { style: { fontSize: 14, fontWeight: 600 } }, title, current ? h('span', { style: { fontWeight: 400, fontSize: 12, color: FAINT, marginLeft: 8 } }, t('current')) : null),
       ...lines.map((l, i) => h('span', { key: i, style: { fontSize: 12, lineHeight: 1.6, color: MUTED } }, l)))
+      // The person names their DSH when it was not found (a project-local install, a wrapper, an unusual prefix).
+      const entryForm = (label) => {
+        const value = entry ?? s.dshEntry ?? ''
+        const use = () => { if (!value.trim() || busy) return; setEntry(null); void load({ dshEntry: value.trim() }) }
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+          note(label),
+          row(h('input', {
+            value, spellCheck: false, placeholder: '~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh', disabled: busy,
+            onChange: (e) => setEntry(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') use() },
+            style: { flex: 1, minWidth: 240, padding: '5px 8px', borderRadius: 6, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', fontFamily: MONO, fontSize: 12 },
+          }), button(t('entryUse'), use, false, busy || !value.trim()),
+          s.dshEntry ? button(t('entryClear'), () => { setEntry(null); void load({ dshEntry: '' }) }, false, busy) : null),
+          note(t('entryHint')))
+      }
+      // Where setup looked for DSH and Node, so a "not found" can be acted on.
+      const checkedList = () => {
+        const c = s.checked
+        if (!c) return null
+        const said = { found: 'seenFound', missing: 'seenMissing', 'not-dsh': 'seenNotDsh' }
+        const lines = [
+          '# DSH', ...(c.dsh.length ? c.dsh.map((d) => `${d.path}  ${t(said[d.result] ?? 'seenNotDsh')}${d.dir ? ` → ${d.dir}` : ''}`) : [t('checkedNone')]),
+          '', `# ${t('checkedNode', { min: c.minNode })}`, ...(c.nodes.length ? c.nodes.map((n) => `${n.path}  ${n.version}  ${t(n.ok ? 'nodeUsable' : 'nodeTooOld')}`) : [t('checkedNone')]),
+        ]
+        return h('details', { style: { fontSize: 12, color: MUTED } },
+          h('summary', { style: { cursor: 'pointer', marginBottom: 6 } }, t('checkedTitle')),
+          h(CodeBlock, { text: lines.join('\n') }),
+          s.probeLog ? note(t('probeLogAt'), code(s.probeLog), t('logAtEnd')) : null)
+      }
       const modeCards = () => {
         const own = s.own
         const ownCompatible = own && s.desktopVersion && own.version.split('.').slice(0, 2).join('.') === s.desktopVersion.split('.').slice(0, 2).join('.')
@@ -381,9 +424,11 @@ window.__ModuleLoader__.load({
             t('reuseSync'),
             `${t('reuseVersion')}${ownCompatible ? '' : ` ${t('reuseIncompatible', { version: own.version, desktop: s.desktopVersion })}`}`,
             t('reuseNoDownload'),
+            ...(own.dir ? [t('reuseWhere', { dir: own.dir })] : []),
           ], s.mode === 'reuse') : null,
           card('private', t('privateTitle'), [t('privateSync'), t('privateVersion'), t('privateDownload')], s.mode === 'private'),
           note(t('modeLater')),
+          entryForm(t('entryLabel')),
         ]
       }
       const installRow = (label) => [
@@ -412,14 +457,26 @@ window.__ModuleLoader__.load({
           para(t('installingBody', { distro })),
           s.job?.log ? h(CodeBlock, { text: s.job.log }) : null,
         ]
+        else if (s.state === 'reuse-missing') body = [
+          para(t('reuseMissingBody')),
+          s.entryMissing ? note(t('entryNotFound', { entry: s.entryMissing })) : null,
+          para(t('reuseMissingWhat')),
+          entryForm(t('entryLabel')),
+          row(button(t('usePrivate'), () => choose('private'), false, busy)),
+          checkedList(),
+        ]
         else if (s.state === 'needs-node' || s.state === 'needs-dsh') body = [
-          para(ownDsh ? t('needsNode') : t('needsPrivate', { version: s.desktopVersion })),
+          para(ownDsh ? (s.checked ? t('needsNodeMin', { min: s.checked.minNode }) : t('needsNode')) : t('needsPrivate', { version: s.desktopVersion })),
+          // Someone who has a DSH of their own that was not found should see this before a 250 MB download.
+          !ownDsh && !s.chosenMode ? entryForm(t('entryLabelPrivate')) : null,
+          s.state === 'needs-node' && s.checked ? note(t('needsNodeManager', { major: s.checked.minNode.split('.')[0] })) : null,
           ...installRow(t('autoInstall')),
+          checkedList(),
         ]
         else if (s.state === 'version-mismatch') body = [
           para(t(ownDsh ? 'mismatchOwn' : 'mismatchPrivate', { desktop: s.desktopVersion, installed: s.installed })),
-          ownDsh ? note(t('mismatchOwnNote')) : null,
-          ...(s.canInstall || s.commands ? installRow(t('autoUpdateTo', { version: s.desktopVersion })) : [note(t('mismatchManual'))]),
+          ownDsh && s.own?.kind !== 'local' ? note(t('mismatchOwnNote')) : null,
+          ...(s.canInstall || s.commands ? installRow(t('autoUpdateTo', { version: s.desktopVersion })) : [note(ownDsh && s.own?.kind === 'local' ? t('reuseLocal', { dir: s.own.dir, version: s.desktopVersion }) : t('mismatchManual'))]),
         ]
         else if (s.state === 'desktop-outdated') body = [
           para(t(ownDsh ? 'outdatedOwn' : 'outdatedPrivate', { installed: s.installed ?? s.wslVersion, desktop: s.desktopVersion })),
@@ -440,7 +497,7 @@ window.__ModuleLoader__.load({
           if (s.drift === 'wsl-newer') body.push(note(t('driftNewer', { wsl: s.wslVersion, desktop: s.desktopVersion })))
         }
         if (s.job && !s.job.running && s.job.code !== 0 && s.state !== 'installing') body.push(para(t('lastInstallFailed'), s.job.error ?? ''), s.job.log ? h(CodeBlock, { text: s.job.log }) : null)
-        if (s.mode && !choosing && s.state !== 'choose' && !s.dev) body.push(row(note(t('runMode', { mode: t(s.mode === 'reuse' ? 'runModeReuse' : 'runModePrivate') })),
+        if (s.mode && !choosing && s.state !== 'choose' && !s.dev) body.push(row(note(t('runMode', { mode: t(s.mode === 'reuse' ? 'runModeReuse' : 'runModePrivate') }), s.mode === 'reuse' && s.own?.dir ? ` · ${s.own.dir}` : ''),
           h('button', { type: 'button', onClick: () => setChoosing(true), style: { border: 0, background: 'transparent', color: 'var(--dsw-alias-button-info-fill, #3b6fe0)', font: 'inherit', fontSize: 12, cursor: 'pointer', padding: 0 } }, t('change'))))
         // The plugin is updated from the Plugins page, when the person chooses: never in the background.
         if (s.plugin) body.push(h('div', { style: { height: 1, background: BORDER } }), note(t('pluginLine', { name: s.plugin.name, version: s.plugin.version })))

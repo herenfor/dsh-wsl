@@ -35,7 +35,8 @@ const FORWARDED_HEADERS = ['content-type', 'cache-control', 'etag', 'content-len
 // launch token arrive over the bridge and stay in memory.
 export const BRIDGE_FILE = join(homedir(), '.dsh-wsl', 'bridge.json')
 export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
-export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro, mode } chosen by the person
+export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro, mode, dshEntry } chosen by the person
+export const PROBE_LOG = join(homedir(), '.dsh-wsl', 'setup-probe.log')  // the last look into the distribution
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 function writeStatus(status) {
   try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
@@ -95,7 +96,11 @@ export async function apply(ctx, config = {}) {
       desktopVersion: ctx.clientModules.composed?.release?.version,
       chosen: readJson(CONFIG_FILE),
       pluginDir: PLUGIN_DIR,
-    }).then((status) => { setup = status; return status }, (error) => { setup = { state: 'error', error: error.message }; return setup }).finally(() => { checking = undefined })
+    }).then((status) => {
+      if (status.probeOutput) { try { mkdirSync(dirname(PROBE_LOG), { recursive: true }); writeFileSync(PROBE_LOG, `${status.probeOutput}\n`) } catch {} }
+      delete status.probeOutput
+      setup = status; return status
+    }, (error) => { setup = { state: 'error', error: error.message }; return setup }).finally(() => { checking = undefined })
     const status = await checking
     if (status.state !== 'ready') ctx.logger.info('wsl-mirror: WSL side not ready: %s%s', status.state, status.distro ? ` (${status.distro})` : '')
     return status.bridge ?? null
@@ -360,7 +365,10 @@ export async function apply(ctx, config = {}) {
     if (job?.running) state = 'installing'
     return {
       state, distro: s.distro ?? remoteGraph?.distro ?? null, distros: (s.distros ?? []).map((d) => d.name), dev: !!s.dev,
-      mode: s.mode ?? null, own: s.own ? { version: s.own.version, path: s.own.entry } : null,
+      mode: s.mode ?? null, own: s.own ? { version: s.own.version, path: s.own.entry, dir: s.own.pkgDir, kind: s.own.kind ?? null, configured: !!s.own.configured } : null,
+      // Where setup looked for DSH and Node, and the DSH location the person named (config dshEntry).
+      checked: s.checked ?? null, dshEntry: s.dshEntry ?? null, entryMissing: s.entryMissing ?? null, chosenMode: s.chosenMode ?? null,
+      probeLog: s.checked ? PROBE_LOG : null,
       // Once connected, the versions that matter are the running ones.
       drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,
       desktopVersion, installed: s.installed ?? wslVersion, wslVersion,
@@ -430,6 +438,12 @@ export async function apply(ctx, config = {}) {
         const remember = (patch) => { try { mkdirSync(dirname(CONFIG_FILE), { recursive: true }); writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...readJson(CONFIG_FILE), ...patch }, null, 2)}\n`) } catch {} }
         if (typeof body.distro === 'string' && body.distro !== readJson(CONFIG_FILE).distro) {
           remember({ distro: body.distro })
+          await resolveBridge(); bridge.restart()
+        } else if (typeof body.dshEntry === 'string') {
+          // The person names their DSH (a dsh command, a file in its package or the package folder): it is looked for
+          // first and reused. An empty one goes back to finding it.
+          const entry = toWslSpec(body.dshEntry.trim())
+          remember(entry ? { dshEntry: entry, mode: 'reuse' } : { dshEntry: undefined })
           await resolveBridge(); bridge.restart()
         } else if ((body.mode === 'reuse' || body.mode === 'private') && body.mode !== readJson(CONFIG_FILE).mode) {
           // Another DSH and another DSH home: the daemon is replaced on the next connect.

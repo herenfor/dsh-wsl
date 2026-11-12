@@ -61,7 +61,7 @@
 | 版本 | `merge.mjs` 的 `compatibleReleases`、`setup.mjs` 的 `compareVersions` | 前两段相同即可连接；semver 顺序（预发布排在正式版前，数字段按数字比较） |
 | 插件自动更新 | `mirror/selfupdate.mjs` | 启动一分钟后检查一次，之后每 6 小时一次：`pluginManager.listBundles` 确认自己是从仓库安装的（`updatable`），`listVersions` 列出新版本，`pickUpdate` 选最新的、声明了组合包、不被 `engines.dsh` 拒绝、没有弃用、且不是预发布（除非当前就是预发布）的版本，`updateBundle` 替换。失败时 DSH 会装回旧版本。WSL 端插件和连接文件随之在下次连接时更新（STAMP）。`config.json` 的 `autoUpdate: false` 关闭；设置窗口底部显示插件版本、状态、“检查更新”和开关 |
 | 版本范围 | `mirror/package.json` | `engines.dsh: ">=0.2.0-0 <0.3.0-0"`。DSH 按 `includePrerelease` 比较，所以 0.2.x 的预发布也在范围内，0.3 的预发布不在 |
-| 用户自己的 dsh | `setup.mjs` 的探测脚本 | `bash -lc 'command -v dsh'`、`~/.local/bin/dsh`、`/usr/local/bin/dsh`、`/usr/bin/dsh`，顺着真实路径找到 `@deepseek-ai/dsh` 的 package.json；npm 全局安装时推出前缀，用于更新命令 |
+| 用户自己的 dsh | `setup.mjs` 的探测脚本 | `bash -lc 'command -v dsh'`、`~/.local/bin/dsh`、`/usr/local/bin/dsh`、`/usr/bin/dsh`，顺着真实路径找到 `@deepseek-ai/dsh` 的 package.json；npm 全局安装时推出前缀，用于更新命令（2026-11-12 起见文末“找不到用户自己的 dsh”）|
 | 页面 | `mirror/client.js` | `SetupDialog`；环境选择器和“添加文件夹”按状态显示 |
 
 开发用的覆盖：入口配置或 `~/.dsh-wsl/bridge.json` 里写了连接命令时，跳过检测，直接用它（目前开发机就是这样）。`DSH_WSL_COMMAND` 指定另一个 wsl.exe，测试用，同时忽略 bridge.json。
@@ -148,3 +148,22 @@
 - 在插件页更新同样会在运行中替换插件，所以"运行中途加载"的判断加上版本：同一进程里加载到的版本和 Desktop 启动时不同，就进入 `restart-required`（`loadKind`，有单元测试）。同一版本因依赖的服务重启而重新加载，照常工作。
 - 上面"插件本身自动更新"相关的记录（决定 8、`selfupdate.mjs` 一行、verdaccio 测试表）已不再适用，保留作历史。
 - 还没处理：运行中途在插件页把本插件关掉再打开（同一版本）不会被判为需要重启。
+
+## 找不到用户自己的 dsh（2026-11-12，用户报告）
+
+用户的另一台机器（Ubuntu-26.04，Desktop 0.2.2-rc.1，插件 0.1.2）：dsh 0.2.2-rc.1 装在 `~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh`（项目式的本地安装，由自己的启动脚本运行，不在 PATH 上）；Node 由 nvm 管理（v22，只在登录 shell 里有），另有编辑器自带的 Node 24。插件找不到 dsh，也找不到 Node，直接按插件专用落到 `needs-node`，没有“复用”可选，也不说查过哪里。
+
+改动（`setup.mjs`、`index.mjs`、`client.js`）：
+
+- 探测脚本改成 `probeScript({ dshEntry })`。登录 shell 只开一次，同时问 `node` 和 `dsh`；再直接看常见版本管理器的目录：nvm（`~/.nvm/versions/node/*/bin`）、fnm、asdf、mise、volta。不看编辑器自带的 Node（会随编辑器升级消失）。dsh 还会看 nvm 各版本的全局 bin、pnpm（`~/.local/share/pnpm`）、bun、`~/.npm-global`。不扫项目文件夹：慢，也可能挑到过期的副本，而复用意味着共用 `~/.dsh` 的数据，选错代价大。
+- 候选可以是 dsh 命令、包里的文件或包的文件夹：先顺着链接找 `package.json`；找不到且是脚本（pnpm 的 shim、`node_modules/.bin/dsh`）时，从脚本里读出它运行的包路径（替换 `$basedir`）。入口一律是包里 `bin.dsh` 指向的文件。
+- 用户可以在设置窗口里填 dsh 的位置（命令名、包文件夹、`lib/bin.js`；Windows 的 `\\wsl.localhost\…` 路径会换成 WSL 路径），存到 `config.json` 的 `dshEntry`，同时选上“复用”。填的位置优先于自动找到的。
+- 需要的 Node 版本取自要运行的那份 DSH 的 `engines.node`（`minNodeOf`），没有声明时用 `MIN_NODE`（24.9.0）。
+- 新状态 `reuse-missing`：选了复用但找不到那份 dsh（或填的位置不对）时，不再悄悄改用插件专用的一份（那是另一份数据，表现为“WSL 任务全不见了”），WSL 端不启动，窗口里让用户填新位置或改用插件专用。
+- 每个状态带 `checked`：查过的 dsh 位置及结果、找到的 Node 及版本是否够、需要的最低版本。设置窗口在缺 Node、缺 DSH、找不到复用的 dsh 时显示“查过的位置”。每次探测的完整输出写到 Desktop 一侧的 `~/.dsh-wsl/setup-probe.log`（含 stderr，`.bashrc` 出错时能看到）。
+- 复用的 dsh 不是 npm 全局安装（`own.kind: 'local'`，比如上面的本地安装、pnpm 全局）时，不生成 `npm install -g` 的更新命令（会在旁边装出第二份），只提示用户用自己的方式更新。只缺 Node、DSH 已经是 Desktop 的版本时，命令里不再带更新 DSH 的一步（以前会带）。
+- 没有选过运行方式、默认走插件专用时，缺 Node / 缺 DSH 的窗口在安装命令前面问“WSL 里已经装了 dsh，只是没被找到？”。
+
+复用的边界（写进了 README）：复用是直接用 Node 运行用户那份 DSH 包，数据在 `~/.dsh`；不经过用户自己的启动脚本或包装器，那里设置的环境变量、端口、`DSH_HOME` 都不会带过来。
+
+验证：单元测试加了 `minNodeOf`、填的位置优先、本地安装不是全局、`reuse-missing`、按 `engines` 判断 Node、只缺 Node 时的命令；另有一个测试在临时 home 里真的运行探测脚本（本地安装、pnpm 的 shim、`.bin/dsh` 的 shim、nvm 的 Node、带引号的路径）。在本机跑探测脚本约 60 ms，结果和以前一致。测试 Desktop（模拟的 wsl.exe）里：填一个不存在的位置得到 `reuse-missing` 并列出查过的位置；改填本地安装的位置后点“使用这份”，几秒内连上；只给 WSL Node 22 时显示“没有找到 Node.js 24.9.0 或更新的版本”和 nvm 的提示。

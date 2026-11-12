@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { commandsFor, compareVersions, compatibleRelease, decodeWslText, evaluate, hostPathOf, installBridgeFiles, installScript, nodeOk, parseDistros, parseProbe, promptFor } from '../mirror/setup.mjs'
+import { commandsFor, compareVersions, compatibleRelease, decodeWslText, evaluate, hostPathOf, installBridgeFiles, installScript, minNodeOf, nodeOk, parseDistros, parseProbe, probeScript, promptFor } from '../mirror/setup.mjs'
+import { execFileSync } from 'node:child_process'
+import { chmodSync, symlinkSync } from 'node:fs'
 
 const utf16 = (text) => Buffer.from(text, 'utf16le')
 
@@ -22,10 +24,20 @@ test('probe output', () => {
   const p = parseProbe(`home=/home/s\narch=x86_64\nnode=/usr/bin/node v18.19.1\nnode=/home/s/.local/bin/node v24.22.2\ndsh={"name":"@deepseek-ai/dsh","version":"0.2.2-rc.1","bin":{"dsh":"lib/bin.js"}}\nown=/home/s/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js|/home/s/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh|{"name":"@deepseek-ai/dsh","version":"0.2.2-rc.1"}\nown=${own}/lib/bin.js|${own}|{"name": "@deepseek-ai/dsh", "version": "0.2.1"}\n`)
   assert.deepEqual(p, {
     home: '/home/s', arch: 'x86_64', nodes: [{ path: '/usr/bin/node', version: 'v18.19.1' }, { path: '/home/s/.local/bin/node', version: 'v24.22.2' }],
-    dsh: { version: '0.2.2-rc.1', bin: 'lib/bin.js' },
-    own: { entry: `${own}/lib/bin.js`, pkgDir: own, version: '0.2.1', prefix: '/home/s/.local' },   // the private one is skipped
+    dsh: { version: '0.2.2-rc.1', bin: 'lib/bin.js', engines: null },
+    // the private one is skipped
+    own: { entry: `${own}/lib/bin.js`, pkgDir: own, version: '0.2.1', engines: null, prefix: '/home/s/.local', kind: 'global', via: `${own}/lib/bin.js` },
+    seen: [],
   })
   assert.equal(nodeOk('v24.9.0'), true); assert.equal(nodeOk('v24.8.9'), false); assert.equal(nodeOk('v25.0.0'), true); assert.equal(nodeOk('v18.19.1'), false)
+  assert.equal(nodeOk('v22.23.4', [22, 0, 0]), true)
+  assert.deepEqual(minNodeOf('>=24.9.0'), [24, 9, 0]); assert.deepEqual(minNodeOf('^22.12 || >=24'), [22, 12, 0]); assert.deepEqual(minNodeOf('24.x'), [24, 0, 0]); assert.equal(minNodeOf('*'), null)
+  // The location the person named wins over one found, and a local install is not an npm global one.
+  const local = '/home/s/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh'
+  const named = parseProbe(`home=/home/s\nentry=found|${local}|{"name":"@deepseek-ai/dsh","version":"0.2.2-rc.1","engines":{"node":">=24.9.0"},"bin":{"dsh":"lib/bin.js"}}\nseen-dsh=/usr/bin/dsh|missing\nseen-dsh=/usr/bin/dsh|missing\nown=${own}/lib/bin.js|${own}|{"name":"@deepseek-ai/dsh","version":"0.2.1"}\n`)
+  assert.deepEqual(named.own, { entry: `${local}/lib/bin.js`, pkgDir: local, version: '0.2.2-rc.1', engines: '>=24.9.0', prefix: null, kind: 'local', configured: true })
+  assert.deepEqual(named.seen, [{ path: '/usr/bin/dsh', result: 'missing' }])
+  assert.equal(parseProbe('home=/home/s\nentry=missing|~/gone\n').entryMissing, '~/gone')
 })
 
 const ubuntu = { distros: [{ name: 'Ubuntu', isDefault: true, version: 2 }] }
@@ -66,8 +78,18 @@ test('states', () => {
   assert.deepEqual([reuse.state, reuse.dshEntry, reuse.dshHome], ['ready', '/o/lib/bin.js', null])
   assert.equal(at(ubuntu, withOwn, { mode: 'private' }).state, 'needs-dsh')
   assert.equal(at(ubuntu, probe({ nodes: node24, own: own('0.1.0') }), { mode: 'reuse' }).state, 'version-mismatch')
-  // reuse chosen, but their DSH is gone: no own DSH to choose, so the private one
-  assert.equal(at(ubuntu, probe({ nodes: node24 }), { mode: 'reuse' }).mode, 'private')
+  // reuse chosen, but their DSH is gone: said so, never quietly the private one (other sessions)
+  const gone = at(ubuntu, probe({ nodes: node24, seen: [{ path: '/usr/bin/dsh', result: 'missing' }] }), { mode: 'reuse' })
+  assert.deepEqual([gone.state, gone.mode, gone.checked.dsh.length], ['reuse-missing', 'reuse', 1])
+  const named = at(ubuntu, probe({ nodes: node24, own: own('0.2.2'), entryMissing: '~/gone' }), { mode: 'reuse', dshEntry: '~/gone' })
+  assert.deepEqual([named.state, named.entryMissing], ['reuse-missing', '~/gone'])
+  // nvm's Node 22 is too old for a DSH that wants 24.9; the threshold is the DSH's own engines
+  const nvm22 = [{ path: '/home/s/.nvm/versions/node/v22.23.4/bin/node', version: 'v22.23.4' }]
+  const wants = (engines) => probe({ nodes: nvm22, own: { ...own('0.2.2'), engines } })
+  const old = at(ubuntu, wants('>=24.9.0'), { mode: 'reuse' })
+  assert.deepEqual([old.state, old.checked.minNode, old.checked.nodes[0].ok], ['needs-node', '24.9.0', false])
+  assert.equal(at(ubuntu, wants('>=22.12.0'), { mode: 'reuse' }).state, 'ready')
+  assert.equal(at(ubuntu, wants(null), { mode: 'reuse' }).state, 'needs-node')   // none declared: MIN_NODE
   // the chosen distribution wins over the default
   const two = { distros: [{ name: 'Ubuntu', isDefault: true, version: 2 }, { name: 'Debian', isDefault: false, version: 2 }] }
   assert.equal(at(two, probe(), { distro: 'Debian' }).distro, 'Debian')
@@ -84,6 +106,14 @@ test('commands: Node only when none is new enough; DSH at Desktop\'s exact versi
   assert.match(reuse, /npm install -g --prefix "\/p" @deepseek-ai\/dsh@0\.2\.2/)
   assert.match(reuse, /你自己用的 dsh 也会一起更新/)
   assert.match(commandsFor({ state: 'ready', drift: 'wsl-older', mode: 'private', node: { path: '/n/node' } }, '0.2.2'), /npm install/)
+  // their DSH is not an npm global install: no `npm install -g` that would put a second copy beside it
+  const local = { ...own('0.1.0'), prefix: null, kind: 'local', pkgDir: '/home/s/x/node_modules/@deepseek-ai/dsh' }
+  assert.equal(commandsFor({ state: 'version-mismatch', mode: 'reuse', node: { path: '/p/bin/node' }, own: local }, '0.2.2'), '')
+  assert.doesNotMatch(commandsFor({ state: 'needs-node', mode: 'reuse', own: local }, '0.2.2'), /npm install/)
+  // only Node is missing: their DSH is already at Desktop's version, so no DSH step
+  const nodeOnly = commandsFor({ state: 'needs-node', mode: 'reuse', installed: '0.2.2', own: own('0.2.2') }, '0.2.2')
+  assert.match(nodeOnly, /nodejs\.org/); assert.doesNotMatch(nodeOnly, /npm install/)
+  assert.match(promptFor({ state: 'needs-node', mode: 'reuse', distro: 'Ubuntu', own: local }, '0.2.2'), /grep -m1 '"version"' '\/home\/s\/x\/node_modules\/@deepseek-ai\/dsh\/package\.json'/)
   assert.equal(commandsFor({ state: 'ready', drift: 'wsl-newer' }, '0.2.2'), '')
   assert.equal(commandsFor({ state: 'desktop-outdated' }, '0.2.2'), '')
   const script = installScript({ state: 'needs-dsh', mode: 'private', node: { path: '/n/node' } }, '0.2.2')
@@ -141,4 +171,43 @@ test('text the Host writes follows the page language: by id, then base language,
   assert.match(promptFor(status, '0.2.2', 'en'), /do not use sudo/)
   assert.match(promptFor(status, '0.2.2', 'ja'), /do not use sudo/)
   assert.match(promptFor(status, '0.2.2', 'zh'), /不要用 sudo/)
+})
+
+test('the probe script finds a project-local DSH it is told about, a pnpm shim and nvm\'s Node', { skip: process.platform === 'win32' }, () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-wsl-probe-'))
+  const pkg = (dir, version) => {
+    mkdirSync(join(dir, 'lib'), { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version, bin: { dsh: 'lib/bin.js' }, engines: { node: '>=24.9.0' } }, null, 2))
+    writeFileSync(join(dir, 'lib', 'bin.js'), '#!/usr/bin/env node\n'); chmodSync(join(dir, 'lib', 'bin.js'), 0o755)
+  }
+  const local = join(home, '.local/share/dsh-cli/node_modules/@deepseek-ai/dsh')
+  pkg(local, '0.2.2-rc.1')
+  // pnpm's global bin: a shell script naming the package relative to its own folder
+  const pnpm = join(home, '.local/share/pnpm')
+  pkg(join(pnpm, 'global/5/node_modules/@deepseek-ai/dsh'), '0.2.1')
+  writeFileSync(join(pnpm, 'dsh'), '#!/bin/sh\nbasedir=$(dirname "$0")\nexec node  "$basedir/global/5/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"\n'); chmodSync(join(pnpm, 'dsh'), 0o755)
+  // a node_modules/.bin shim (pnpm writes scripts, not links)
+  mkdirSync(join(home, 'proj/node_modules/.bin'), { recursive: true })
+  pkg(join(home, 'proj/node_modules/@deepseek-ai/dsh'), '0.2.0')
+  writeFileSync(join(home, 'proj/node_modules/.bin/dsh'), '#!/bin/sh\nbasedir=$(dirname "$(echo "$0" | sed -e \'s,\\\\,/,g\')")\nexec node "$basedir/../@deepseek-ai/dsh/lib/bin.js" "$@"\n')
+  // nvm's Node, which only an interactive shell puts on PATH
+  const nvm = join(home, '.nvm/versions/node/v24.11.0/bin')
+  mkdirSync(nvm, { recursive: true }); writeFileSync(join(nvm, 'node'), '#!/bin/sh\necho v24.11.0\n'); chmodSync(join(nvm, 'node'), 0o755)
+  const probeWith = (dshEntry) => parseProbe(execFileSync('sh', ['-c', probeScript({ dshEntry })], { env: { HOME: home, PATH: '/usr/bin:/bin' }, encoding: 'utf8' }))
+
+  const found = probeWith()
+  assert.ok(found.nodes.some((n) => n.path === join(nvm, 'node') && n.version === 'v24.11.0'))
+  assert.equal(found.own.pkgDir, join(pnpm, 'global/5/node_modules/@deepseek-ai/dsh'))
+  assert.equal(found.own.kind, 'local')
+  assert.ok(found.seen.some((x) => x.path === join(home, '.local/bin/dsh') && x.result === 'missing'))
+  assert.ok(found.seen.some((x) => x.path === join(pnpm, 'dsh') && x.result === 'found'))
+
+  for (const entry of ['~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh', `${local}/lib/bin.js`, `${local}/`]) {
+    const named = probeWith(entry)
+    assert.deepEqual([named.own.pkgDir, named.own.entry, named.own.version, named.own.configured, named.own.engines], [local, `${local}/lib/bin.js`, '0.2.2-rc.1', true, '>=24.9.0'], entry)
+  }
+  assert.equal(probeWith('~/proj/node_modules/.bin/dsh').own.pkgDir, join(home, 'proj/node_modules/@deepseek-ai/dsh'))
+  assert.equal(probeWith("~/it's not here").entryMissing, "~/it's not here")
+  const status = evaluate({ desktopVersion: '0.2.2-rc.1', listing: { distros: [{ name: 'U', isDefault: true, version: 2 }] }, chosen: { mode: 'reuse', dshEntry: '~/x' }, probe: probeWith(`${local}/lib/bin.js`) })
+  assert.deepEqual([status.state, status.dshEntry, status.node.path], ['ready', `${local}/lib/bin.js`, join(nvm, 'node')])
 })

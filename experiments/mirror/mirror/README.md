@@ -28,10 +28,10 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
 2. Quit Desktop completely (if it keeps running in the system tray, quit it there too), wait at least 5 seconds, then open it again. Until then the plugin does not start working, and the bottom of the sidebar says to restart Desktop.
 3. On the new-task page, switch the run location under the input box to WSL. The first time, "Set up the WSL environment" opens; choose one way:
-   - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; updates update both.
+   - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; updates update both. The plugin looks for `dsh` on your PATH (including a login shell's), in `~/.local/bin`, `/usr/local/bin`, `/usr/bin`, and in the global folders of nvm, fnm, pnpm, bun and `~/.npm-global`. If yours is somewhere else (installed into a project folder, or started by a script of your own), enter its location in the setup window: the command, the `@deepseek-ai/dsh` package folder or its `lib/bin.js`.
    - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.
 
-   If Node.js or DSH is missing, the window lists the commands to run. Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
+   If Node.js or DSH is missing, the window lists the commands to run, and under "Where setup looked" which places were checked. Node.js must be as new as your DSH asks for (24.9 or newer for DSH 0.2); one installed with nvm, fnm, asdf, mise or Volta is found too, so with nvm you can also run `nvm install 24` and click "Check again". Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
 4. Once connected, the loading note at the bottom of the sidebar goes away and the WSL folders and tasks appear in the sidebar.
 
 ### Other ways to install
@@ -48,7 +48,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 ## Updates
 
 - The plugin itself never updates in the background, which could cut off WSL tasks that are running. Check for and install updates under Plugins → Installed → WSL run mode, at a moment when no WSL task is running, then quit Desktop completely and open it again; until then the sidebar asks for the restart. The bottom of the setup window shows the installed version.
-- The DSH in WSL follows Desktop's version. After Desktop updates, the setup window offers to update the WSL side.
+- The DSH in WSL follows Desktop's version. After Desktop updates, the setup window offers to update the WSL side. A dsh you reuse that is not an npm global install (in a project folder, or installed with pnpm) is not updated by the plugin, which would put a second copy beside it: update it your own way.
 
 ## Uninstall
 
@@ -60,6 +60,8 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 ## When something goes wrong
 
 - When the bottom of the sidebar says the WSL side failed to start, click it to see the error.
+- When your dsh or Node.js is not found, the setup window lists where it looked. The full output of the last check is in `%USERPROFILE%\.dsh-wsl\setup-probe.log` on Windows.
+- If you chose to reuse your dsh and it is later not found (moved, removed), the WSL side stays off and the setup window asks for its new location; it does not switch to the plugin's own copy by itself.
 - The WSL side's log is `~/.dsh-wsl/run/desktop-wsl/daemon.log`.
 - Feedback: <https://github.com/herenfor/dsh-wsl/issues>
 
@@ -67,6 +69,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 
 - Tested only with DSH 0.2.2-rc.1. Desktop and the DSH in WSL must match in the first two parts of their versions.
 - In the separate-copy mode, WSL tasks are not shared with your own dsh, and tasks cannot be moved between the two ways yet.
+- Reusing your dsh runs its package directly with Node, with its data in `~/.dsh`. It does not go through launch scripts or wrappers of your own: environment variables, ports or a `DSH_HOME` set there are not applied.
 - When a WSL plugin's patch changes the configuration of an official component (rather than switching it off), that change does not apply in the Desktop window.
 - The interface of WSL plugins loads into the whole Desktop window, not only into WSL tasks.
 - Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background.

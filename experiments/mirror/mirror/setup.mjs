@@ -52,39 +52,101 @@ export function parseDistros(text) {
   return rows
 }
 
-// One shell script answers everything setup needs to know about a distribution, as key=value lines.
-const PROBE = String.raw`H="$HOME"; echo "home=$H"; echo "arch=$(uname -m)"
-for c in "$H/.dsh-wsl/node/bin/node" "$H/.local/bin/node" "$(command -v node 2>/dev/null)" /usr/local/bin/node /usr/bin/node; do
-  [ -n "$c" ] && [ -x "$c" ] && echo "node=$c $("$c" -v 2>/dev/null)"
+// One shell script answers everything setup needs to know about a distribution, as key=value lines. It runs under
+// `sh -c` with the distribution's plain PATH; the login shell is asked once for its PATH's node and dsh, and the usual
+// version managers' folders are looked at directly (their Node often loads only in an interactive shell).
+//   node=<path> <version>      a Node found (every candidate, in order of preference)
+//   dsh=<package.json>         the plugin's private DSH
+//   own=<candidate>|<pkgDir>|<package.json>   a DSH of the person's own, found from a dsh command
+//   entry=found|<pkgDir>|<package.json> or entry=missing|<what>   the DSH the person named (config dshEntry)
+//   seen-dsh=<candidate>|found|<pkgDir>, |missing or |not-dsh     every place looked at, for the setup window
+// A candidate is a dsh command, a file in the package or the package's folder. Symlinks are followed; a script shim
+// (pnpm's, node_modules/.bin/dsh) is read for the package path it runs. Project folders are not searched.
+const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+export function probeScript({ dshEntry } = {}) {
+  return String.raw`H="$HOME"; echo "home=$H"; echo "arch=$(uname -m)"
+L=$(bash -lc 'echo "@node=$(command -v node)"; echo "@dsh=$(command -v dsh)"' </dev/null 2>/dev/null)
+LN=$(printf '%s\n' "$L" | sed -n 's/^@node=//p' | tail -n1); LD=$(printf '%s\n' "$L" | sed -n 's/^@dsh=//p' | tail -n1)
+for c in "$H/.dsh-wsl/node/bin/node" "$H/.local/bin/node" "$LN" "$(command -v node 2>/dev/null)" \
+  "$H"/.nvm/versions/node/*/bin/node "$H"/.local/share/fnm/node-versions/*/installation/bin/node "$H"/.fnm/node-versions/*/installation/bin/node \
+  "$H"/.asdf/installs/nodejs/*/bin/node "$H"/.local/share/mise/installs/node/*/bin/node "$H/.volta/bin/node" /usr/local/bin/node /usr/bin/node; do
+  [ -n "$c" ] && [ -f "$c" ] && [ -x "$c" ] && echo "node=$c $("$c" -v 2>/dev/null)"
 done
 P="$H/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh/package.json"; [ -f "$P" ] && echo "dsh=$(tr -d '\n' < "$P")"
-for c in "$(bash -lc 'command -v dsh' 2>/dev/null | tail -n1)" "$H/.local/bin/dsh" /usr/local/bin/dsh /usr/bin/dsh; do
-  [ -n "$c" ] && [ -e "$c" ] || continue
-  r=$(readlink -f "$c"); d=$(dirname "$r")
-  while [ -n "$d" ] && [ "$d" != / ]; do
-    if [ -f "$d/package.json" ] && grep -q '"name": *"@deepseek-ai/dsh"' "$d/package.json"; then echo "own=$r|$d|$(tr -d '\n' < "$d/package.json")"; break; fi
+pkgof() {
+  d="$1"; [ -d "$d" ] || d=$(dirname "$d")
+  while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != . ]; do
+    if [ -f "$d/package.json" ] && grep -q '"name": *"@deepseek-ai/dsh"' "$d/package.json"; then echo "$d"; return 0; fi
     d=$(dirname "$d")
   done
+  return 1
+}
+find_dsh() {
+  r=$(readlink -f "$1" 2>/dev/null) && [ -e "$r" ] || return 1
+  pkgof "$r" && return 0
+  [ -f "$r" ] && [ "$(head -c 2 "$r")" = '#!' ] || return 1
+  b=$(dirname "$r")
+  for p in $(grep -o '[^"'"'"' :=]*@deepseek-ai/dsh/[^"'"'"' :]*' "$r" 2>/dev/null | head -n 5); do
+    p=$(printf '%s' "$p" | sed -e 's|[$][{]basedir[}]|'"$b"'|g' -e 's|[$]basedir|'"$b"'|g')
+    q=$(readlink -f "$p" 2>/dev/null) && [ -e "$q" ] && pkgof "$q" && return 0
+  done
+  return 1
+}
+look() {
+  [ -n "$1" ] || return 0
+  if [ ! -e "$1" ]; then echo "seen-dsh=$1|missing"
+  elif d=$(find_dsh "$1"); then echo "seen-dsh=$1|found|$d"; echo "own=$1|$d|$(tr -d '\n' < "$d/package.json")"
+  else echo "seen-dsh=$1|not-dsh"; fi
+}
+E=${quote(dshEntry ?? '')}
+if [ -n "$E" ]; then
+  F="$E"
+  case "$E" in "~") F="$H" ;; "~/"*) F="$H/$(printf '%s' "$E" | cut -c3-)" ;; */*) ;; *) F=$(bash -lc 'command -v "$1"' _ "$E" </dev/null 2>/dev/null | tail -n1) ;; esac
+  if [ -n "$F" ] && [ -e "$F" ] && d=$(find_dsh "$F"); then echo "entry=found|$d|$(tr -d '\n' < "$d/package.json")"; else echo "entry=missing|$E"; fi
+fi
+for c in "$LD" "$(command -v dsh 2>/dev/null)" "$H/.local/bin/dsh" /usr/local/bin/dsh /usr/bin/dsh; do look "$c"; done
+for c in "$H"/.nvm/versions/node/*/bin/dsh "$H/.local/share/pnpm/dsh" "$H/.bun/bin/dsh" "$H/.npm-global/bin/dsh" "$H"/.local/share/fnm/node-versions/*/installation/bin/dsh; do
+  [ -e "$c" ] && look "$c"
 done
 true`
+}
+
+/** One DSH package as the probe found it: where it is, how to run it, and how it was installed. */
+function dshPackage(pkgDir, json, via) {
+  const pkg = JSON.parse(json)
+  const bin = (typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.dsh) ?? 'lib/bin.js'
+  const prefix = npmPrefixOf(pkgDir)
+  return { entry: posix.join(pkgDir, bin), pkgDir, version: pkg.version, engines: pkg.engines?.node ?? null, prefix, kind: prefix ? 'global' : 'local', ...(via ? { via } : {}) }
+}
 
 /** Parse the probe's output. */
 export function parseProbe(text) {
-  const out = { home: undefined, arch: undefined, nodes: [], dsh: null, own: null }
+  const out = { home: undefined, arch: undefined, nodes: [], dsh: null, own: null, seen: [] }
+  let found = null
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf('='); if (i < 0) continue
     const key = line.slice(0, i); const value = line.slice(i + 1)
     if (key === 'home') out.home = value
     else if (key === 'arch') out.arch = value
     else if (key === 'node') { const [path, version] = value.split(' '); if (version && !out.nodes.some((n) => n.path === path)) out.nodes.push({ path, version }) }
-    else if (key === 'dsh') { try { const pkg = JSON.parse(value); out.dsh = { version: pkg.version, bin: typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.dsh } } catch {} }
-    else if (key === 'own' && !out.own) {
-      const [entry, pkgDir, ...json] = value.split('|')
+    else if (key === 'dsh') { try { const pkg = JSON.parse(value); out.dsh = { version: pkg.version, bin: typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.dsh, engines: pkg.engines?.node ?? null } } catch {} }
+    else if (key === 'seen-dsh') {
+      const [path, result, dir] = value.split('|')
+      if (!out.seen.some((s) => s.path === path)) out.seen.push({ path, result, ...(dir ? { dir } : {}) })
+    } else if (key === 'entry') {
+      const [result, where, ...json] = value.split('|')
+      if (result === 'found') { try { out.entry = { ...dshPackage(where, json.join('|')), configured: true } } catch { out.entryMissing = where } }
+      else out.entryMissing = where
+    } else if (key === 'own' && !found) {
+      const [via, pkgDir, ...json] = value.split('|')
       // The plugin's private DSH is not the person's own.
       if (out.home && pkgDir.startsWith(`${out.home}/.dsh-wsl/`)) continue
-      try { const pkg = JSON.parse(json.join('|')); out.own = { entry, pkgDir, version: pkg.version, prefix: npmPrefixOf(pkgDir) } } catch {}
+      try { found = dshPackage(pkgDir, json.join('|'), via) } catch {}
     }
   }
+  // The DSH the person named comes first.
+  out.own = out.entry ?? found
+  delete out.entry
   return out
 }
 
@@ -117,13 +179,29 @@ export function compatibleRelease(a, b) {
   const pa = parseVersion(a); const pb = parseVersion(b)
   return pa.length === 3 && pb.length === 3 && pa[0] === pb[0] && pa[1] === pb[1]
 }
-export const nodeOk = (v) => { const p = parseVersion(v); if (p.length < 3) return false; for (let i = 0; i < 3; i++) if (p[i] !== MIN_NODE[i]) return p[i] > MIN_NODE[i]; return true }
+/** Node `v` is at least `min` ([major, minor, patch]). */
+export function nodeOk(v, min = MIN_NODE) {
+  const p = parseVersion(v)
+  if (p.length < 3) return false
+  for (let i = 0; i < 3; i++) if (p[i] !== min[i]) return p[i] > min[i]
+  return true
+}
+/** The lowest Node a package's `engines.node` allows (>=24.9.0, ^24.9, 24.x …; the first range of an `||`), or null. */
+export function minNodeOf(range) {
+  const m = /^\s*(?:>=|\^|~|=)?\s*v?(\d+)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?/.exec(String(range ?? '').split('||')[0])
+  if (!m) return null
+  return [Number(m[1]), Number(m[2]) || 0, Number(m[3]) || 0]
+}
+const showVersion = (v) => v.join('.')
 
 /**
- * Where the WSL side stands. `listing` is {error?} or {distros}; `chosen` is {distro?, mode?}; `probe` is parseProbe's
- * result for the distribution (absent when there is none). States: no-wsl, no-distro, wsl1, choose (WSL has the
- * person's own DSH and no mode is chosen), needs-node, needs-dsh, version-mismatch (WSL's DSH too old),
- * desktop-outdated (WSL's DSH newer than Desktop's major.minor), ready (with `drift` when versions differ within it).
+ * Where the WSL side stands. `listing` is {error?} or {distros}; `chosen` is {distro?, mode?, dshEntry?}; `probe` is
+ * parseProbe's result for the distribution (absent when there is none). States: no-wsl, no-distro, wsl1, choose (WSL
+ * has the person's own DSH and no mode is chosen), reuse-missing (reuse was chosen but that DSH is not found: never
+ * switched to the private one quietly, whose sessions are others), needs-node, needs-dsh, version-mismatch (WSL's DSH
+ * too old), desktop-outdated (WSL's DSH newer than Desktop's major.minor), ready (with `drift` when versions differ
+ * within it). `checked` lists where the probe looked, for the setup window. The Node needed is what the DSH to run
+ * declares in its engines (MIN_NODE when it declares none).
  */
 export function evaluate({ desktopVersion, listing, chosen = {}, probe }) {
   if (listing.error) return { state: 'no-wsl', distros: [] }
@@ -133,16 +211,26 @@ export function evaluate({ desktopVersion, listing, chosen = {}, probe }) {
   const base = { distro: distro.name, distros, home: probe?.home, arch: probe?.arch, own: probe?.own ?? null }
   if (distro.version === 1) return { ...base, state: 'wsl1' }
   if (!probe) return { ...base, state: 'error', error: 'cannot look into the distribution' }
-  const node = probe.nodes.find((n) => nodeOk(n.version))
-  let mode = chosen.mode === 'reuse' && !probe.own ? undefined : chosen.mode
+  const nodeFor = (engines) => {
+    const min = minNodeOf(engines) ?? MIN_NODE
+    return { min, node: probe.nodes.find((n) => nodeOk(n.version, min)) }
+  }
+  const checked = (min) => ({ dsh: probe.seen ?? [], nodes: probe.nodes.map((n) => ({ ...n, ok: nodeOk(n.version, min) })), minNode: showVersion(min) })
+  const named = chosen.dshEntry ? { dshEntry: chosen.dshEntry, entryMissing: probe.entryMissing ?? null } : {}
+  let mode = chosen.mode
+  if (mode === 'reuse' && (!probe.own || probe.entryMissing)) {
+    const { min, node } = nodeFor(probe.own?.engines)
+    return { ...base, ...named, state: 'reuse-missing', mode, node, checked: checked(min) }
+  }
   if (mode !== 'reuse' && mode !== 'private') {
-    if (probe.own) return { ...base, state: 'choose', node }
+    if (probe.own) { const { min, node } = nodeFor(probe.own.engines); return { ...base, ...named, state: 'choose', node, checked: checked(min) } }
     mode = 'private'
   }
   const dsh = mode === 'reuse'
-    ? { version: probe.own.version, entry: probe.own.entry }
-    : probe.dsh && { version: probe.dsh.version, entry: posix.join(probe.home, '.dsh-wsl', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', probe.dsh.bin ?? 'lib/bin.js') }
-  const at = { ...base, mode, node, dshHome: mode === 'private' ? posix.join(probe.home, '.dsh-wsl', 'home') : null }
+    ? { version: probe.own.version, entry: probe.own.entry, engines: probe.own.engines }
+    : probe.dsh && { version: probe.dsh.version, engines: probe.dsh.engines, entry: posix.join(probe.home, '.dsh-wsl', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', probe.dsh.bin ?? 'lib/bin.js') }
+  const { min, node } = nodeFor(dsh?.engines)
+  const at = { ...base, ...named, mode, chosenMode: chosen.mode ?? null, node, checked: checked(min), dshHome: mode === 'private' ? posix.join(probe.home, '.dsh-wsl', 'home') : null }
   if (!dsh) return { ...at, state: node ? 'needs-dsh' : 'needs-node' }
   at.installed = dsh.version
   if (!node) return { ...at, state: 'needs-node' }
@@ -169,7 +257,12 @@ export function commandsFor(status, desktopVersion, lang = 'zh') {
     lines.push(`mkdir -p ~/.dsh-wsl && cd ~/.dsh-wsl && curl -fL https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz | tar -xJ && rm -rf node && mv ${name} node`)
   }
   const step = status.state === 'needs-node' ? '2. ' : ''
-  if (status.mode === 'reuse') {
+  if (status.installed === desktopVersion) {
+    // Only Node was missing: the DSH is already at Desktop's version.
+  } else if (status.mode === 'reuse' && status.own?.kind === 'local') {
+    // Not an npm global install (a project folder, pnpm, a wrapper): `npm install -g` would put a second copy beside
+    // it, so the person updates it their own way.
+  } else if (status.mode === 'reuse') {
     const prefix = status.own?.prefix
     lines.push(say({ zh: `# ${step}把你的 dsh 更新到 ${desktopVersion}（和 Desktop 同版本；你自己用的 dsh 也会一起更新）`, en: `# ${step}Update your dsh to ${desktopVersion} (the Desktop's version; the dsh you use yourself is updated too)` }))
     lines.push(`PATH="${nodeDir}:$PATH" npm install -g ${prefix ? `--prefix "${prefix}" ` : ''}@deepseek-ai/dsh@${desktopVersion}`)
@@ -198,7 +291,7 @@ export function installScript(status, desktopVersion) {
 export function promptFor(status, desktopVersion, lang = 'zh') {
   const commands = commandsFor(status, desktopVersion, lang)
   if (!commands) return ''
-  const check = status.mode === 'reuse' ? 'dsh --version' : 'grep -m1 version ~/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh/package.json'
+  const check = `grep -m1 '"version"' ${status.mode === 'reuse' && status.own?.pkgDir ? quote(`${status.own.pkgDir}/package.json`) : '~/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh/package.json'}`
   const en = [
     `Please set up what the DSH WSL run mode needs in WSL (distribution ${status.distro}). Do not change anything else already in WSL, and do not use sudo.`,
     '',
@@ -267,12 +360,16 @@ export async function check({ wsl = 'wsl.exe', desktopVersion, chosen = {}, plug
   let probe
   const pick = listing.distros?.find((d) => d.name === chosen.distro) ?? listing.distros?.find((d) => d.isDefault) ?? listing.distros?.[0]
   if (pick && pick.version !== 1) {
-    const r = await run(wsl, ['-d', pick.name, '--exec', 'sh', '-c', PROBE], { timeout: 90_000 })
-    if (r.code === 0) probe = parseProbe(decodeWslText(r.stdout))
-    else listing.probeError = (decodeWslText(r.stdout) + r.stderr).trim().slice(0, 500)
+    const r = await run(wsl, ['-d', pick.name, '--exec', 'sh', '-c', probeScript({ dshEntry: chosen.dshEntry })], { timeout: 90_000 })
+    const output = decodeWslText(r.stdout)
+    // Kept for troubleshooting (the Host writes it to ~/.dsh-wsl/setup-probe.log): a broken .bashrc shows up here.
+    listing.probeOutput = `# ${new Date().toISOString()} ${pick.name} exit ${r.code ?? r.error}\n${output}${r.stderr ? `\n# stderr\n${r.stderr}` : ''}`
+    if (r.code === 0) probe = parseProbe(output)
+    else listing.probeError = (output + r.stderr).trim().slice(0, 500)
   }
   const status = evaluate({ desktopVersion, listing, chosen, probe })
   if (listing.probeError) status.probeError = listing.probeError
+  if (listing.probeOutput) status.probeOutput = listing.probeOutput
   status.script = installScript(status, desktopVersion)
   if (status.state === 'ready' && pluginDir) {
     const bridgeDir = posix.join(status.home, '.dsh-wsl', 'bridge')

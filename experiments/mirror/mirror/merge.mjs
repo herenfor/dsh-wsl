@@ -20,9 +20,10 @@ export const compatibleReleases = (a, b) => {
  * @param local - this Host's graph.
  * @param remote - { graph, origin, disabled? } from the WSL agent, or undefined.
  * @param order - orderByModuleGraph from dsh-client-modules.
- * @param builtinHere - ids of this Host's rows that ship with its DSH. They are never replaced, whatever the remote
- *   calls them: the window keeps its own official UI even if the WSL side misjudges its rows (0.1.4 and earlier did
- *   under pnpm, and the whole window became the WSL side's, blank when anything of it failed to load).
+ * @param builtinHere - ids of this Host's rows that ship with its DSH. One is replaced only by a remote row a WSL
+ *   third-party plugin owns (`remote.owner[id]`: a plugin standing in for an official package, as dsh-runtime-tuning's
+ *   chat fix does); a row the remote merely calls 'user' never is, so the window keeps its own official UI when the
+ *   WSL side misjudges its rows (0.1.4 did under pnpm, and the whole window became the WSL side's, blank).
  * @returns { graph, mirrored, dropped } where mirrored maps a package id to its remote row and dropped holds the ids of
  *   local rows left out.
  */
@@ -36,7 +37,9 @@ export function mergeGraphs(local, remote, order, builtinHere = new Set()) {
   }
   for (const row of remote.graph.entries) {
     if (remote.origin[row.id] !== 'user') continue
-    if (builtinHere.has(row.id)) kept.add(row.id)
+    // An official row of this Host is replaced only by a third-party plugin's stand-in for it (see the agent's owner).
+    const owner = remote.owner?.[row.id]
+    if (builtinHere.has(row.id) && !(typeof owner === 'string' && !owner.startsWith('@deepseek-ai/'))) kept.add(row.id)
     else mirrored.set(row.id, row)
   }
   const byId = new Map(local.entries.map((row) => [row.id, row]))

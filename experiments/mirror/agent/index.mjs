@@ -78,14 +78,38 @@ function profileDir() {
   return profile ? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles', profile) : undefined
 }
 
-export function snapshot(cm, root, ws, connection, disabled) {
+/**
+ * The third-party plugins of a profile and their real folders: [{ name, dir }] from its manifest's dependencies.
+ * Official packages (@deepseek-ai/) and this plugin's own agent are left out.
+ */
+export function profilePlugins(profileDir) {
+  let pkg
+  try { pkg = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) } catch { return [] }
+  return Object.keys(pkg.dependencies ?? {})
+    .filter((name) => !name.startsWith('@deepseek-ai/') && name !== 'dsh-wsl-agent')
+    .map((name) => ({ name, dir: real(join(profileDir, 'node_modules', ...name.split('/'))) }))
+}
+
+/**
+ * `origin[id]`: 'builtin' or 'user'. `owner[id]`: for a user row, the third-party plugin of the profile its code lives
+ * in. A plugin may stand in for an official client package under its official name (dsh-runtime-tuning's chat fix
+ * does); Desktop lets such a row replace its own official one only when it has an owner, so a row that is 'user' for
+ * any other reason (an installation layout misread, as under pnpm in 0.1.4) never replaces Desktop's UI.
+ */
+export function snapshot(cm, root, ws, connection, disabled, plugins = []) {
   const graph = cm.graph()
   const origin = {}
+  const owner = {}
   for (const row of graph.entries) {
     const path = cm.clientPath(row.id)
     origin[row.id] = isBuiltin(path, root) ? 'builtin' : 'user'
+    if (origin[row.id] === 'user' && path !== undefined) {
+      const file = real(path)
+      const plugin = plugins.find((p) => file.startsWith(p.dir + sep))
+      if (plugin) owner[row.id] = plugin.name
+    }
   }
-  return { graph, origin, routes: ws ? routeTable(ws, connection) : undefined, disabled, distro: process.env.WSL_DISTRO_NAME }
+  return { graph, origin, owner, routes: ws ? routeTable(ws, connection) : undefined, disabled, distro: process.env.WSL_DISTRO_NAME }
 }
 
 export function apply(ctx) {
@@ -116,7 +140,7 @@ export function apply(ctx) {
     try { for (const entry of ctx.get('loader').entries()) if (typeof entry.options?.id === 'string' && typeof entry.options?.name === 'string') names.set(entry.options.id, entry.options.name) } catch {}
     return disabledByPatches(bundlePatches(dir, parseYaml), names)
   }
-  const frame = () => `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection(), disabled()))}\n\n`
+  const frame = () => { const dir = profileDir(); return `data: ${JSON.stringify(snapshot(cm, root, ctx.webServer, connection(), disabled(), dir ? profilePlugins(dir) : []))}\n\n` }
   const push = () => { const f = frame(); for (const res of clients) res.write(f) }
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',

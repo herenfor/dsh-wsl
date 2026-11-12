@@ -191,3 +191,11 @@
   - Desktop 端加一道保护（`mergeGraphs` 的 `builtinHere`）：Desktop 自己 DSH 自带的行，无论 WSL 端怎么标，都不被替换，只记到 `mirror-status.json` 的 `kept` 并打一条警告。WSL 端判断出错时，窗口至少保留自己的官方界面。两边都装了的用户插件仍由 WSL 端提供，和以前一样。
 - 验证：单元测试覆盖 npm 扁平、pnpm（带链接）的安装根和 `isBuiltin`，以及 WSL 端把官方行都标成 `user` 时 Desktop 保留本地行（pnpm 的测试在旧代码上失败）。端到端：在假 WSL 里用 pnpm 装一份 dsh 0.2.2-rc.2（项目式，和远端一样），复用它，插件按 npm 方式装进测试 Desktop，结果：WSL 端 75 行全部是 `builtin`（旧算法在这份安装上只认出 325 个官方包里的 1 个），`mirrored` 为空，重载页面正常，侧栏有 WSL 文件夹。再把 WSL 端换回 0.1.4 的 agent（会误判）：Desktop 端 `kept` 74 行、`mirrored` 为空，页面照样正常。测试用的 pnpm 安装留在假 WSL 的 `~/.local/share/dsh-cli`，以后测复用时可以用。
 - 远端恢复：完全退出 Desktop 后，在 `%USERPROFILE%\.dsh-wsl\config.json` 把 `dshEntry` 临时改成不存在的路径（插件不连 WSL，也就不镜像），或在 Desktop profile 的 `cordis.patch.yml` 里停用插件；更新到 0.1.5 后改回原来的 `dshEntry`。
+
+## 插件替换官方组件被兜底保护挡住（2026-11-12，0.1.5）
+
+0.1.5 的兜底保护（Desktop 自带的官方组件不被替换）也挡住了正当的替换：dsh-runtime-tuning 停用 DSH 的聊天界面，插入自己的替身，并沿用官方包名 `@deepseek-ai/dsh-client-ui-chat`。WSL 端把这一行标成 `user`（代码在插件里），以前 Desktop 用 WSL 的这一行，调优插件的聊天修复在 Desktop 窗口里生效；0.1.5 把它当成"被误判的官方组件"留在本地，修复就不生效了。在模拟环境里复用调优插件时发现（`kept` 里出现 `@deepseek-ai/dsh-client-ui-chat`）。
+
+修复（0.1.6）：WSL 端的快照多带一个 `owner`：标成 `user` 的行，它的代码在 profile 的哪个第三方插件里（按 profile 依赖的真实目录判断，`link:` 安装的也算）。Desktop 端只在官方行有第三方插件做 `owner` 时才用 WSL 的；没有 `owner` 的（安装结构误判之类）和 `owner` 是官方包的，仍留在本地。规则一句话：官方组件只允许被 WSL 里的插件替换。
+
+验证：单元测试覆盖插件替身可以替换、官方包做 owner 不行、`link:` 安装的插件能找到 owner、安装目录里的行没有 owner。端到端：假 WSL 的 desktop-wsl 启用调优插件，`mirrored` 为 `@deepseek-ai/dsh-client-ui-chat`、`kept` 为空，页面正常；0.1.4 的 agent 不带 `owner`，误判的 74 行仍全部留在本地（前一节的验证）。

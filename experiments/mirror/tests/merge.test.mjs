@@ -193,3 +193,38 @@ test('official rows of this Host are never replaced, whatever the WSL side calls
   // A plugin of the person's own on both sides still comes from WSL (not part of this Host's DSH).
   assert.deepEqual([...mergeGraphs(local, remote, order, new Set(['@deepseek-ai/dsh-client-modules'])).mirrored.keys()], ['@deepseek-ai/dsh-client-ui-chat', 'dsh-sentinel'])
 })
+
+test('a WSL plugin standing in for an official package replaces it; a row merely called user does not', () => {
+  // dsh-runtime-tuning switches off DSH's chat UI and inserts its own under the official package name.
+  const here = new Set(['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat', '@deepseek-ai/dsh-client-ui-tool'])
+  const withOwner = { ...remote, owner: { '@deepseek-ai/dsh-client-ui-chat': 'dsh-runtime-tuning', 'dsh-sentinel': 'dsh-sentinel' } }
+  const { mirrored, kept } = mergeGraphs(local, withOwner, order, here)
+  assert.deepEqual([...mirrored.keys()], ['@deepseek-ai/dsh-client-ui-chat', 'dsh-sentinel'])
+  assert.deepEqual([...kept], [])
+  // An official package as the owner (an official optional bundle in the profile) does not count.
+  const official = { ...remote, owner: { '@deepseek-ai/dsh-client-ui-chat': '@deepseek-ai/dsh-experimental-x' } }
+  assert.deepEqual([...mergeGraphs(local, official, order, here).kept], ['@deepseek-ai/dsh-client-ui-chat'])
+})
+
+test('which profile plugin a row\'s code lives in, linked plugins included', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { profilePlugins, snapshot } = await import('../agent/index.mjs')
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-wsl-owner-')))
+  const profile = join(base, 'profiles/desktop-wsl')
+  const tuning = join(base, 'src/tuning')                    // link:/…/tuning
+  mkdirSync(join(tuning, 'ui-chat'), { recursive: true }); writeFileSync(join(tuning, 'ui-chat/client.js'), '')
+  mkdirSync(join(profile, 'node_modules'), { recursive: true })
+  symlinkSync(tuning, join(profile, 'node_modules/tuning'))
+  writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { tuning: 'link:../../src/tuning', 'dsh-wsl-agent': 'link:/a', '@deepseek-ai/dsh-x': '1' } }))
+  const plugins = profilePlugins(profile)
+  assert.deepEqual(plugins, [{ name: 'tuning', dir: tuning }])
+  const root = join(base, 'install/node_modules')
+  mkdirSync(join(root, '@deepseek-ai/dsh-client-ui-tool'), { recursive: true }); writeFileSync(join(root, '@deepseek-ai/dsh-client-ui-tool/client.js'), '')
+  const paths = { '@deepseek-ai/dsh-client-ui-chat': join(tuning, 'ui-chat/client.js'), '@deepseek-ai/dsh-client-ui-tool': join(root, '@deepseek-ai/dsh-client-ui-tool/client.js'), stray: join(base, 'elsewhere/client.js') }
+  const cm = { graph: () => ({ entries: Object.keys(paths).map((id) => ({ id })) }), clientPath: (id) => paths[id] }
+  const s = snapshot(cm, root, undefined, undefined, [], plugins)
+  assert.deepEqual(s.origin, { '@deepseek-ai/dsh-client-ui-chat': 'user', '@deepseek-ai/dsh-client-ui-tool': 'builtin', stray: 'user' })
+  assert.deepEqual(s.owner, { '@deepseek-ai/dsh-client-ui-chat': 'tuning' })
+})

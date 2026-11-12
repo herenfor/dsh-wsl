@@ -19,17 +19,15 @@ function labelled(meta, fallback, side) {
 }
 
 // Labels appended to a title. An official bundle both Hosts ship keeps one row (the page styles official bundles by
-// their exact names), so its title also tells the WSL side's state; its row switch stays this Host's.
-const BOTH = {
-  zh: (on) => ` · Windows · WSL ${on ? '已启用' : '未启用'}`,
-  other: (on) => ` · Windows · WSL ${on ? 'on' : 'off'}`,
-}
-function labelledBoth(meta, fallback, wslEnabled) {
+// their exact names); its row switch stays this Host's, so the title tells both sides' states.
+const state = (zh, on) => (zh ? (on ? '已启用' : '未启用') : (on ? 'on' : 'off'))
+const both = (zh, localOn, wslOn) => ` · Windows ${state(zh, localOn)} · WSL ${state(zh, wslOn)}`
+function labelledBoth(meta, fallback, localEnabled, wslEnabled) {
   const title = meta?.title
   if (title && typeof title === 'object') {
-    return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, t + (lang === 'zh' ? BOTH.zh : BOTH.other)(wslEnabled)])) }
+    return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, t + both(lang === 'zh', localEnabled, wslEnabled)])) }
   }
-  return { ...(meta ?? {}), title: (typeof title === 'string' ? title : fallback) + BOTH.zh(wslEnabled) }
+  return { ...(meta ?? {}), title: (typeof title === 'string' ? title : fallback) + both(true, localEnabled, wslEnabled) }
 }
 
 /** Whether a bundle both Hosts have is the official one, shown as a single row. */
@@ -43,7 +41,7 @@ export function mergeBundles(local, remote) {
   const theirsByName = new Map((remote ?? []).map((b) => [b.name, b]))
   const out = local.map((b) => {
     const twin = theirsByName.get(b.name)
-    if (sharedOfficial(b, twin)) return { ...b, meta: labelledBoth(b.meta, b.name, twin.enabled) }
+    if (sharedOfficial(b, twin)) return { ...b, meta: labelledBoth(b.meta, b.name, b.enabled, twin.enabled) }
     return { ...b, meta: labelled(b.meta, b.name, 'local') }
   })
   const localByName = new Map(local.map((b) => [b.name, b]))

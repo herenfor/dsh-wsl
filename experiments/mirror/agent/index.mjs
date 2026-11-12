@@ -87,7 +87,13 @@ export function apply(ctx) {
   const connection = () => { try { return ctx.get('connection') } catch { return undefined } }
   // Official entries that WSL plugins' bundle patches switch off: Desktop drops their client rows from the page too.
   let parseYaml
-  try { parseYaml = createRequire(join(root, 'wsl-agent.js'))('yaml').parse } catch (error) { ctx.logger.warn('wsl-agent: no YAML parser: %s', error.message) }
+  try {
+    // DSH's own `!!js` expressions (a `disabled:` decided at run time) are kept as opaque values: they are not the literal
+    // `disabled: true` looked for here, and leaving the tag unknown printed a YAML warning on every read.
+    const { parse } = createRequire(join(root, 'wsl-agent.js'))('yaml')
+    const customTags = [{ tag: 'tag:yaml.org,2002:js', resolve: (source) => ({ $js: source }) }]
+    parseYaml = (text) => parse(text, { customTags })
+  } catch (error) { ctx.logger.warn('wsl-agent: no YAML parser: %s', error.message) }
   const disabled = () => {
     const dir = profileDir()
     if (!dir || !parseYaml) return []

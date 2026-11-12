@@ -99,7 +99,7 @@ test('plugins: an official bundle both sides ship is one row telling both states
   const remote = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: false }, { name: 'dsh-runtime-tuning', official: false, rows: [{ rowId: 'r', entryId: 'include:r' }] }]
   const b = mergeBundles(local, remote)
   assert.deepEqual(b.map((x) => `${x.name}|${JSON.stringify(x.meta.title)}|${x.enabled ?? ''}`), [
-    '@deepseek-ai/dsh-x|{"en":"X · Windows · WSL off","zh":"某功能 · Windows · WSL 未启用"}|true',
+    '@deepseek-ai/dsh-x|{"en":"X · Windows on · WSL off","zh":"某功能 · Windows 已启用 · WSL 未启用"}|true',
     'dsh-wsl-mirror|"dsh-wsl-mirror · Windows"|true',
     'wsl:dsh-runtime-tuning|"dsh-runtime-tuning · WSL"|',
   ])

@@ -72,19 +72,21 @@ step "version $version"
   const pkg = JSON.parse(fs.readFileSync(p, "utf8")); pkg.version = process.argv[2]
   fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n")' "$pkg/package.json" "$version"
 
+if [ "$mode" = --local ]; then
+  # Published before anything is committed or tagged: a failed publish leaves the repository as it was, so the same
+  # command can simply run again; and the workflow the tag later starts finds the version on npm and skips.
+  step "publish from this machine"
+  ( cd "$pkg" && npm publish --access public --tag "$npm_tag" ) || {
+    git checkout -q -- "$pkg"
+    echo "npm publish failed; nothing was committed or tagged. Fix it and run the same command again." >&2
+    exit 1
+  }
+fi
+
 step "commit and tag $tag"
 git add -- "$pkg"
 git diff --cached --quiet || git commit -q -m "Release $name $version"
 git tag -a "$tag" -m "$name $version"
-
-if [ "$mode" = --local ]; then
-  # Published before the tag goes up, so the workflow the tag starts finds it on npm and skips.
-  step "publish from this machine"
-  ( cd "$pkg" && npm publish --access public --tag "$npm_tag" ) || {
-    echo "npm publish failed; the commit and tag $tag stay local. Fix it and run: (cd $pkg && npm publish --access public --tag $npm_tag) && git push origin main $tag" >&2
-    exit 1
-  }
-fi
-git push -q origin main "$tag"
+git push -q origin main "$tag" || { echo "pushing failed; the release commit and tag $tag are local. Run: git push origin main $tag" >&2; exit 1; }
 echo "pushed main and $tag"
 [ "$mode" = --local ] && echo "published $name@$version from this machine" || echo "GitHub Actions publishes $name@$version: https://github.com/herenfor/dsh-wsl/actions"

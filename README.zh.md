@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-给 Windows 版 DeepSeek Harness（Desktop）加一个 **WSL 运行模式**：每个任务可以选在 Windows 还是 WSL 里运行。选了 WSL 的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。Linux 插件装在 WSL 里原样可用，包括改界面的插件，在 Desktop 的插件页单独管理。
+给 Windows 版 DeepSeek Harness（Desktop）加一个 **WSL 运行模式**：每个文件夹可以选在 Windows 还是 WSL 里运行。在 WSL 运行的任务，agent、命令、文件读写和插件都在 WSL 里的 DSH 中运行，界面仍然是 Desktop 的窗口。Linux 插件装在 WSL 里原样可用，包括改界面的插件，在 Desktop 的插件页单独管理。
 
 只用插件和外部组件实现，不改官方代码。
 

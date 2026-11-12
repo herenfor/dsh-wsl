@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A **WSL run mode** for DeepSeek Harness Desktop on Windows: each task can run in Windows or in WSL. For a task set to WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window. Linux plugins installed in WSL work as they are, including ones that change the interface, and are managed on their own tab of Desktop's Plugins page.
+A **WSL run mode** for DeepSeek Harness Desktop on Windows: each folder can be set to run its tasks in Windows or in WSL. For a task that runs in WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window. Linux plugins installed in WSL work as they are, including ones that change the interface, and are managed on their own tab of Desktop's Plugins page.
 
 Built only from plugins and external components; no official code is changed.
 

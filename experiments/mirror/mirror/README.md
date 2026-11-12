@@ -12,12 +12,13 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 
 ## What it does
 
-- **Choose where each task runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
+- **Choose where each folder runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. The choice is kept per folder: new tasks in that folder run there from then on, and existing tasks stay where they are. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
+- **Windows folders can run in WSL too**: WSL reads and writes them through paths like `/mnt/c/…`, which is slower than a folder inside WSL, and a note under the input box says so. The sidebar still shows it as one folder, with both sides' tasks under it.
 - **Add WSL folders**: when adding a folder, choose a Windows folder or a WSL folder. A WSL folder is picked by browsing the Linux file system right in Desktop.
 - **Both sides in one list**: the sidebar lists the folders and tasks of Windows and WSL together, with a small penguin on WSL ones. Approvals, questions, subagents and live titles work as in any task.
 - **WSL plugins on their own tab**: the Plugins page gets a "WSL (distribution)" tab to install, enable, disable and uninstall plugins in WSL, with a page per plugin showing its description and the state of each component. The official Installed tab still covers Windows only; the two sides do not affect each other. Plugins installed only in WSL, including ones that change the interface, work in the Desktop window too.
 - **Desktop's model credentials**: when a WSL task calls a model, it asks Desktop for the credentials; API keys and sign-ins are never written to the WSL disk. An API key you entered in WSL yourself takes precedence.
-- **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL; settings only WSL plugins have stay in WSL.
+- **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL. Settings of a plugin installed only in WSL show up on Desktop's settings page too, and changes made there are saved straight to WSL.
 - **Both sides' choices in one list**: where you pick one entry from a list (the default preset, the default permission preset, the search service, the model), the list shows both sides' entries, with " · WSL" on those only WSL has. When you pick one that only one side has, tasks on the other side use that side's own default, and the presets page says what the other side uses.
 - **MCP servers set per side**: an MCP server's command, paths and environment variables differ between Windows and WSL, so they are not copied from Windows. Set up WSL's MCP servers at the bottom of the "WSL (distribution)" tab on the Plugins page; they serve only tasks that run in WSL.
 - **Scheduled tasks together**: the scheduled tasks page lists both sides' scheduled tasks, and viewing, editing, running now and deleting one go to the side it lives on. A scheduled task that starts a new task is created on the side where the chosen folder runs.
@@ -29,7 +30,7 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 ## Requirements
 
 - DSH Desktop 0.2.x on Windows 10 or 11.
-- WSL 2 with a Linux distribution: Ubuntu, Debian or whichever you have.
+- WSL 2 with a Linux distribution: Ubuntu, Debian or whichever you have. If WSL is not installed yet, there is no distribution, or the distribution still runs on WSL 1, the setup window lists the commands to run in PowerShell.
 - A DSH in WSL whose version matches Desktop in its first two parts (for example both 0.2.x). Without one, the plugin lists the install commands; it can run them for you or hand them to the Windows DSH (step 3 below).
 
 ## Install
@@ -41,6 +42,10 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
    - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.
 
    If Node.js or DSH is missing, the window lists the commands to run, and under "Where setup looked" which places were checked. Node.js must be as new as your DSH asks for (24.9 or newer for DSH 0.2); one installed with nvm, fnm, asdf, mise or Volta is found too, so with nvm you can also run `nvm install 24` and click "Check again". Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
+
+   To open this window again later, click "WSL environment settings…" in the run-location menu under the input box. There you can:
+   - Switch the run mode. After switching, tasks from the other way no longer show in the list; their data is not deleted.
+   - Switch the distribution, when you have more than one. WSL's default distribution is used unless you pick another.
 
    ![First-run setup: reuse your own dsh or use a copy of its own](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/setup-en.webp)
 

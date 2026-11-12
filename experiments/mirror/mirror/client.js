@@ -74,7 +74,8 @@ window.__ModuleLoader__.load({
 [data-row-key^="workspace:wsl:"] > span:nth-child(3) > span::after {
   content: ""; display: inline-block; width: 13px; height: 13px; margin-left: 5px; vertical-align: -2px;
   background: ${penguinUrl} center / contain no-repeat;
-}`
+}
+@keyframes dsh-wsl-spin { to { transform: rotate(360deg) } }`
     const PenguinIcon = () => h('span', { 'aria-hidden': true, style: { display: 'inline-block', width: 14, height: 14, flex: 'none', background: `${penguinUrl} center / contain no-repeat` } })
 
     function useStore(store) {
@@ -435,6 +436,51 @@ window.__ModuleLoader__.load({
             }, h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.2, 'aria-hidden': true }, h('path', { d: 'M1.5 4.5v8h13v-7h-6.5l-1.5-1.5h-5z' })), e.name))))
     }
 
+    // Foot of the sidebar while the WSL side comes up: Desktop starts it, so its folders and tasks arrive some seconds
+    // after the page. Asks /wsl-bridge/setup once a second only while it is starting, then waits (no requests) for the
+    // first WSL folder to reach the page; shows nothing once loaded or when WSL is not set up.
+    const LOADING_STATES = new Set(['checking', 'starting', 'installing'])
+    const Spinner = () => h('span', { 'aria-hidden': true, style: { display: 'inline-block', width: 12, height: 12, flex: 'none', boxSizing: 'border-box', border: '1.5px solid currentColor', borderRightColor: 'transparent', borderRadius: '50%', animation: 'dsh-wsl-spin .9s linear infinite' } })
+    function WslStatus({ wide, ui }) {
+      const [setup, setSetup] = React.useState(null)
+      const [settled, setSettled] = React.useState(false)
+      const [dialog, setDialog] = React.useState(false)
+      const workspaces = useStore(ui.workspaces.list)
+      const listed = workspaces.items.some((w) => isWsl(w.workspaceId))
+      React.useEffect(() => {
+        let stopped = false
+        let timer
+        const poll = () => api('wsl-bridge/setup').then((next) => {
+          if (stopped) return
+          setSetup(next)
+          if (LOADING_STATES.has(next.state)) timer = setTimeout(poll, 1000)
+        }, () => { if (!stopped) timer = setTimeout(poll, 3000) })
+        poll()
+        return () => { stopped = true; clearTimeout(timer) }
+      }, [])
+      // Connected with no WSL folder yet: the folders follow within moments; one with none ends the wait after 8 s.
+      const connected = setup?.state === 'connected'
+      React.useEffect(() => {
+        if (!connected || listed) return undefined
+        const timer = setTimeout(() => setSettled(true), 8000)
+        return () => clearTimeout(timer)
+      }, [connected, listed])
+      if (setup === null) return null
+      const distro = setup.distro ? `（${setup.distro}）` : ''
+      let text
+      if (setup.state === 'installing') text = `正在 WSL${distro} 中安装 DSH…`
+      else if (LOADING_STATES.has(setup.state)) text = `正在启动 WSL${distro}…`
+      else if (connected && !listed && !settled) text = '正在加载 WSL 的任务…'
+      else if (setup.state === 'error') text = `WSL${distro} 启动失败，点击查看`
+      const modal = dialog ? h(SetupDialog, { key: 'setup', ui, onClose: () => setDialog(false) }) : null
+      if (text === undefined) return modal
+      const failed = setup.state === 'error'
+      return h(React.Fragment, null, h('button', {
+        type: 'button', title: text, onClick: () => setDialog(true), ...hoverable(),
+        style: { display: 'flex', alignItems: 'center', justifyContent: wide ? 'flex-start' : 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: wide ? '8px 12px' : '8px 0', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: failed ? 'var(--dsw-alias-state-error-primary, #e5484d)' : MUTED, font: 'inherit', fontSize: 13, textAlign: 'left', cursor: 'pointer' },
+      }, failed ? h(PenguinIcon) : h(Spinner), wide ? h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, text) : null), modal)
+    }
+
     return {
       name: 'dsh-wsl-mirror-browser',
       inject: ['slots'],
@@ -448,6 +494,8 @@ window.__ModuleLoader__.load({
         }, 'wsl-mirror: WSL marks in the sidebar')
         ctx.inject(['uiWorkspace', 'slots'], (c) => {
           const Hero = () => h(Environment, { ui: c.uiWorkspace })
+          const Status = ({ wide }) => h(WslStatus, { wide, ui: c.uiWorkspace })
+          c.effect(() => c.slots.inject('sidebar.footer.action', () => c.slots.register({ name: 'sidebar.footer.action', id: 'wsl-status', order: -100 }, Status)), 'wsl-mirror: WSL loading in the sidebar foot')
           c.effect(() => c.slots.inject('conversation.hero.options', () => c.slots.register({ name: 'conversation.hero.options', id: 'wsl-run-target' }, Hero)), 'wsl-mirror: environment under the composer')
           // Shadows the native chooser (lower priority renders) and calls it for Windows folders.
           const desktop = globalThis.__DSH_DIRECTORY_PICKER__

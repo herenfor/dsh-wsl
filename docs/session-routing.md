@@ -112,5 +112,11 @@ Two things make the WSL folders and tasks show up once it connects, without relo
   a failed control stream: every live projection, Windows Sessions included, then stopped until a Session was
   opened again (seen as titles and the "3 subagents" header only appearing after clicking the task).
 
+While this happens the sidebar foot shows "正在启动 WSL（…）…" and then "正在加载 WSL 的任务…" (`WslStatus` in
+client.js, slot `sidebar.footer.action`). It asks `/wsl-bridge/setup` once a second only while the state is
+checking/starting/installing, then watches the page's Workspace store until the first WSL folder arrives (8 s at
+most, for a WSL side with no folders). A failed start stays as "WSL 启动失败，点击查看", which opens the setup
+dialog; a WSL side that is not set up shows nothing.
+
 The sidebar forgets the expansion of folders it does not see at load, so WSL folders come back collapsed; a click
 opens them.

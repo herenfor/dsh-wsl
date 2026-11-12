@@ -126,3 +126,11 @@
 - **插件补丁关掉的官方组件**：插件的 `cordis.patch.yml` 可以写 `{ id: <条目>, disabled: true }` 关掉官方条目（ds-bot 关掉 `ui-settings-general`，好占用设置入口 `settings.trigger`）。补丁只作用在 WSL Host 的组合上，Desktop 页面里官方组件还在，单例位置被占，插件的 `apply` 抛异常、整个插件不启动（页面只报 “1 entry did not activate”）。现在 agent 读出 WSL 上已启用的第三方插件补丁里关掉的条目，用 WSL 加载器把条目 id 换成包名上报，Desktop 合并模块图时把这些官方模块从页面去掉（`mergeGraphs` 的 `dropped`，写进 `mirror-status.json`）。只影响页面模块，Desktop 后台不动；补丁里改官方条目配置（非 disabled）的情况还没处理。
 
 排查方法：生产页面里 cordis 不把插件 `apply` 的异常打到控制台。用 CDP 的 `Page.addScriptToEvaluateOnNewDocument` 在页面脚本前给 `__ModuleLoader__.load` 挂 setter，包住目标模块的 `apply` 打印异常。
+
+## 界面语言（2026-11-12）
+
+- 页面文字跟随 DSH 设置的语言，切换后立即生效，不用刷新。`client.js` 的 `DICT` 每种语言一块（现在有 `zh`、`en`），插件启动时整块注册到 DSH 的语言服务（命名空间 `dshWsl`），用 `ctx.locale.bind` 取文字；组件订阅语言快照，切换时重绘。没有词典的语言按 DSH 的规则退回英文。
+- 插件标题和描述按原样的多语言文本传给页面（`plugins.mjs` 的 `text`），由 `ctx.locale.resolveText` 选语言；WSL 插件详情的说明文档按当前语言读取。
+- 后台自己写的文字（安装命令的注释、交给 DSH 的安装提示、安装错误、两条报错）：页面每次请求带上 `x-dsh-wsl-language`，`language.mjs` 记下最近的语言，文字写成 `{ zh, en }` 表，按语言 id → 基础语言 → 英文选用。
+- 加一种语言：在 `DICT` 加一块（键同 `en`，缺的键退回英文），再给 `language.mjs` 调用处的表加上这种语言。
+- 验证（测试环境）：英文界面下切到中文，标签页名、说明、按钮、详情页、组件状态、插件标题和描述立即变成中文；切回英文同样。中英文词典各 175 条，键一一对应。

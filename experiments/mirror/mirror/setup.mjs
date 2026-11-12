@@ -15,6 +15,7 @@
 //   ~/.dsh-wsl/run/      the daemon's socket, token, identity and log
 // Versions: the two DSH must share major.minor (compatibleRelease); a WSL DSH older than that is updated, a newer one
 // asks for a Desktop update. Within major.minor they connect, and the person may still align them.
+import { inLanguage } from './language.mjs'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -156,23 +157,24 @@ const INSTALLS = new Set(['needs-node', 'needs-dsh', 'version-mismatch'])
 export const canInstall = (status) => INSTALLS.has(status.state) || (status.state === 'ready' && status.drift === 'wsl-older')
 
 /** The commands the person runs in the WSL terminal for this state (empty when none apply). */
-export function commandsFor(status, desktopVersion) {
+export function commandsFor(status, desktopVersion, lang = 'zh') {
+  const say = (texts) => inLanguage(lang, texts)
   if (!canInstall(status)) return ''
   const lines = []
   const arch = status.arch === 'aarch64' ? 'arm64' : 'x64'
   const nodeDir = status.node ? posix.dirname(status.node.path) : '$HOME/.dsh-wsl/node/bin'
   if (status.state === 'needs-node') {
     const name = `node-v${NODE_VERSION}-linux-${arch}`
-    lines.push('# 1. Node.js（只给这个插件用，装在 ~/.dsh-wsl/node）')
+    lines.push(say({ zh: '# 1. Node.js（只给这个插件用，装在 ~/.dsh-wsl/node）', en: '# 1. Node.js (for this plugin only, in ~/.dsh-wsl/node)' }))
     lines.push(`mkdir -p ~/.dsh-wsl && cd ~/.dsh-wsl && curl -fL https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz | tar -xJ && rm -rf node && mv ${name} node`)
   }
   const step = status.state === 'needs-node' ? '2. ' : ''
   if (status.mode === 'reuse') {
     const prefix = status.own?.prefix
-    lines.push(`# ${step}把你的 dsh 更新到 ${desktopVersion}（和 Desktop 同版本；你自己用的 dsh 也会一起更新）`)
+    lines.push(say({ zh: `# ${step}把你的 dsh 更新到 ${desktopVersion}（和 Desktop 同版本；你自己用的 dsh 也会一起更新）`, en: `# ${step}Update your dsh to ${desktopVersion} (the Desktop's version; the dsh you use yourself is updated too)` }))
     lines.push(`PATH="${nodeDir}:$PATH" npm install -g ${prefix ? `--prefix "${prefix}" ` : ''}@deepseek-ai/dsh@${desktopVersion}`)
   } else {
-    lines.push(`# ${step}DSH ${desktopVersion}（和 Desktop 同版本，装在 ~/.dsh-wsl/dsh）`)
+    lines.push(say({ zh: `# ${step}DSH ${desktopVersion}（和 Desktop 同版本，装在 ~/.dsh-wsl/dsh）`, en: `# ${step}DSH ${desktopVersion} (the Desktop's version, in ~/.dsh-wsl/dsh)` }))
     lines.push(`PATH="${nodeDir}:$PATH" npm install --prefix ~/.dsh-wsl/dsh @deepseek-ai/dsh@${desktopVersion}`)
   }
   return lines.join('\n')
@@ -193,11 +195,22 @@ export function installScript(status, desktopVersion) {
 }
 
 /** The same setup as a task for the Windows DSH: it runs the commands through wsl.exe and checks the result. */
-export function promptFor(status, desktopVersion) {
-  const commands = commandsFor(status, desktopVersion)
+export function promptFor(status, desktopVersion, lang = 'zh') {
+  const commands = commandsFor(status, desktopVersion, lang)
   if (!commands) return ''
   const check = status.mode === 'reuse' ? 'dsh --version' : 'grep -m1 version ~/.dsh-wsl/dsh/node_modules/@deepseek-ai/dsh/package.json'
-  return [
+  const en = [
+    `Please set up what the DSH WSL run mode needs in WSL (distribution ${status.distro}). Do not change anything else already in WSL, and do not use sudo.`,
+    '',
+    `In PowerShell, run the commands below one by one with \`wsl.exe -d ${status.distro} -- bash -lc '<command>'\` (lines starting with # are notes, not commands):`,
+    '',
+    '```bash', commands, '```',
+    '',
+    `When done, run \`wsl.exe -d ${status.distro} -- bash -lc '${check}'\` and confirm the version is ${desktopVersion}.`,
+    'If npm cannot find this version, it has not been published to npm yet: stop and tell me; do not install a different version.',
+    'On a network failure you may retry once; if it still fails, tell me the exact error.',
+  ]
+  const zh = [
     `请帮我在 WSL（发行版 ${status.distro}）里装好 DSH WSL 运行模式需要的组件。不要改动 WSL 里已有的其他东西，也不要用 sudo。`,
     '',
     `在 PowerShell 里用 \`wsl.exe -d ${status.distro} -- bash -lc '<命令>'\` 依次执行下面的命令（# 开头的是说明，不用执行）：`,
@@ -207,7 +220,8 @@ export function promptFor(status, desktopVersion) {
     `完成后执行 \`wsl.exe -d ${status.distro} -- bash -lc '${check}'\`，确认版本是 ${desktopVersion}。`,
     '如果 npm 提示找不到这个版本，说明它还没有发布到 npm，停下来告诉我，不要改装别的版本。',
     '网络失败时可以重试一次；仍然失败就把错误原文告诉我。',
-  ].join('\n')
+  ]
+  return inLanguage(lang, { zh, en }).join('\n')
 }
 
 /** Content stamp of the bridge files this plugin carries (transport/ and agent/). */
@@ -259,8 +273,6 @@ export async function check({ wsl = 'wsl.exe', desktopVersion, chosen = {}, plug
   }
   const status = evaluate({ desktopVersion, listing, chosen, probe })
   if (listing.probeError) status.probeError = listing.probeError
-  status.commands = commandsFor(status, desktopVersion)
-  status.prompt = promptFor(status, desktopVersion)
   status.script = installScript(status, desktopVersion)
   if (status.state === 'ready' && pluginDir) {
     const bridgeDir = posix.join(status.home, '.dsh-wsl', 'bridge')

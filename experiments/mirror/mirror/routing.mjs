@@ -7,6 +7,7 @@
 //
 // Where a new Session runs is decided when the page asks for one (`session/create`): folders that live in WSL always
 // run there; for other folders the run location chosen on the new-task page (`/wsl-bridge/run-target`) decides.
+import { noteLanguage, pick } from './language.mjs'
 import http from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -221,7 +222,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     if (!mine?.ok || mine.value.presets.some((p) => p.id === id)) return undefined
     const row = theirs.find((p) => p.id === id)
     if (!row) return undefined
-    return failure('agent-preset/not-found', `"${row.name ?? id}" 模式来自 WSL 中的插件，只能用于在 WSL 中运行的任务。请在输入框下方把运行位置切换到 WSL。`)
+    return failure('agent-preset/not-found', pick({ zh: `"${row.name ?? id}" 模式来自 WSL 中的插件，只能用于在 WSL 中运行的任务。请在输入框下方把运行位置切换到 WSL。`, en: `The "${row.name ?? id}" mode comes from a plugin in WSL and works only for tasks that run in WSL. Switch the run location under the input box to WSL.` }))
   }
 
   async function create(req, res, next, message, args, local) {
@@ -265,6 +266,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
       let workspaceId = new URL(req.url, 'http://x').searchParams.get('workspaceId')
       let presetAvailable
       if (req.method === 'POST') {
@@ -305,8 +307,9 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
       const send = (result) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result)) }
-      if (!available()) return send(failure('wsl/unavailable', 'WSL 端未连接或版本不同'))
+      if (!available()) return send(failure('wsl/unavailable', pick({ zh: 'WSL 端未连接或版本不同', en: 'The WSL side is not connected or runs a different version' })))
       try {
         if (req.method === 'POST') {
           const body = JSON.parse((await readBody(req)).toString('utf8'))

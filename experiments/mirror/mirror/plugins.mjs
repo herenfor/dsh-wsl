@@ -4,10 +4,15 @@
 // Bundles the WSL side needs to be reached at all: listed nowhere, so they cannot be switched off from the page.
 const INTERNAL = new Set(['dsh-wsl-agent'])
 
+// Package text as the manifest gives it (a string, or translations by lowercase locale with English among them); the
+// page resolves it in the active language. A map without English gets one, so the page's resolver always has it.
 const text = (value, fallback) => {
-  if (typeof value === 'string') return { zh: value, en: value }
-  if (value && typeof value === 'object') return { zh: value.zh ?? value.en ?? fallback, en: value.en ?? value.zh ?? fallback }
-  return { zh: fallback, en: fallback }
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, v]) => typeof v === 'string')
+    if (entries.length) return { en: value.en ?? entries[0][1], ...Object.fromEntries(entries) }
+  }
+  return fallback
 }
 
 /**

@@ -128,3 +128,22 @@ test('plugin updates: newest compatible, not deprecated, releases only unless on
   assert.equal(updateKind({ update: 'git' }), 'git')
   assert.equal(updateKind({}), undefined)
 })
+
+test('text the Host writes follows the page language: by id, then base language, then English', async () => {
+  const { inLanguage, noteLanguage, pick, language } = await import('../mirror/language.mjs')
+  const texts = { zh: '中', en: 'en' }
+  assert.equal(inLanguage('zh', texts), '中')
+  assert.equal(inLanguage('zh-CN', texts), '中')
+  assert.equal(inLanguage('ja', texts), 'en')
+  noteLanguage({ headers: { 'x-dsh-wsl-language': 'zh-CN' } })
+  assert.equal(pick(texts), '中')
+  noteLanguage({ headers: { 'x-dsh-wsl-language': 'bad value; drop' } })
+  assert.equal(language(), 'zh-CN')
+  noteLanguage({ headers: { 'x-dsh-wsl-language': 'en' } })
+  assert.equal(pick(texts), 'en')
+  const status = { state: 'needs-dsh', mode: 'private', distro: 'Debian', node: { path: '/n/node' } }
+  assert.match(commandsFor(status, '0.2.2', 'en'), /# DSH 0\.2\.2 \(the Desktop's version/)
+  assert.match(promptFor(status, '0.2.2', 'en'), /do not use sudo/)
+  assert.match(promptFor(status, '0.2.2', 'ja'), /do not use sudo/)
+  assert.match(promptFor(status, '0.2.2', 'zh'), /不要用 sudo/)
+})

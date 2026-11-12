@@ -19,7 +19,8 @@ import { wslBundles, wslBundlePage } from './plugins.mjs'
 import { toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { translateLoose } from './ids.mjs'
-import { check as checkWsl, compareVersions } from './setup.mjs'
+import { check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
+import { noteLanguage, language, pick } from './language.mjs'
 import { installSelfUpdate } from './selfupdate.mjs'
 
 export const name = 'wsl-mirror'
@@ -236,6 +237,7 @@ export async function apply(ctx, config = {}) {
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
       const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
       const distro = remoteGraph?.distro ?? setup.distro ?? null
       if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return reply({ connected: false, distro, setup: publicSetup().state })
@@ -274,6 +276,7 @@ export async function apply(ctx, config = {}) {
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
       if (remoteGraph === undefined) { res.writeHead(503); res.end(); return }
       try {
         const upstream = await remoteFetch(`/api/plugin-manager/detail-file${new URL(req.url, 'http://x').search}`, { headers: { cookie: await cookie() } })
@@ -328,9 +331,11 @@ export async function apply(ctx, config = {}) {
       // Once connected, the versions that matter are the running ones.
       drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,
       desktopVersion, installed: s.installed ?? wslVersion, wslVersion,
-      commands: s.commands ?? '', prompt: s.prompt ?? '', canInstall: !!s.script && !s.dev, probeError: s.probeError ?? null,
+      commands: commandsFor(s, desktopVersion, language()), prompt: promptFor(s, desktopVersion, language()), canInstall: !!s.script && !s.dev, probeError: s.probeError ?? null,
       plugin: selfUpdate.state(),
-      job: job ? { running: job.running, log: job.log.slice(-12).join('\n'), code: job.code ?? null, error: job.error ?? null } : null,
+      job: job ? { running: job.running, log: job.log.slice(-12).join('\n'), code: job.code ?? null, error: job.failure === 'not-published' ? pick({ zh: `npm 上还没有 @deepseek-ai/dsh@${job.version}，要等它发布后再装。`, en: `@deepseek-ai/dsh@${job.version} is not on npm yet; install it once it is published.` })
+        : job.failure === 'network' ? pick({ zh: '网络连接失败，可以稍后重试。', en: 'The network connection failed; try again later.' })
+          : job.failure === 'exit' ? pick({ zh: `安装失败（退出码 ${job.code}）`, en: `The install failed (exit code ${job.code})` }) : job.error ?? null } : null,
       error: s.error ?? (dsh.state === 'stopped' ? dsh.exit?.error ?? `DSH exited (${dsh.exit?.code ?? dsh.exit?.signal ?? '?'})` : failed ? bridge.state.lastError : null),
       log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
     }
@@ -369,9 +374,11 @@ export async function apply(ctx, config = {}) {
       const text = current.log.join('\n')
       current.code = code
       if (code !== 0) {
-        current.error = /ETARGET|No matching version|notarget/i.test(text) ? `npm 上还没有 @deepseek-ai/dsh@${version}，要等它发布后再装。`
-          : /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network/i.test(text) ? '网络连接失败，可以稍后重试。'
-            : error ?? current.log.filter((l) => /err/i.test(l)).slice(-1)[0] ?? `安装失败（退出码 ${code}）`
+        // Known failures are worded when the page asks, in its language.
+        current.version = version
+        current.failure = /ETARGET|No matching version|notarget/i.test(text) ? 'not-published' : /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network/i.test(text) ? 'network' : undefined
+        current.error = error ?? current.log.filter((l) => /err/i.test(l)).slice(-1)[0]
+        if (current.failure === undefined && current.error === undefined) current.failure = 'exit'
       }
       current.running = false
       ctx.logger.info('wsl-mirror: WSL install finished with %s', code)
@@ -387,6 +394,7 @@ export async function apply(ctx, config = {}) {
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
       if (req.method === 'POST') {
         let body = {}
         try { body = JSON.parse((await readBody(req)).toString('utf8')) } catch {}

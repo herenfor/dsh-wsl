@@ -130,8 +130,9 @@ test('WSL tab: official optional and installed bundles, mine first; base and int
     { name: '@deepseek-ai/dsh-x', official: true, installed: false, enabled: false, meta: { title: { en: 'X', zh: '某功能' } } },
     { name: 'ds-bot', official: false, installed: true, enabled: true, version: '0.3.5', description: 'Bots' },
   ])
-  assert.deepEqual(rows.map((r) => `${r.name}|${r.title.zh}|${r.enabled}`), ['ds-bot|ds-bot|true', '@deepseek-ai/dsh-x|某功能|false'])
-  assert.equal(rows[0].description.en, 'Bots')
+  const zh = (v) => typeof v === 'string' ? v : v.zh ?? v.en
+  assert.deepEqual(rows.map((r) => `${r.name}|${zh(r.title)}|${r.enabled}`), ['ds-bot|ds-bot|true', '@deepseek-ai/dsh-x|某功能|false'])
+  assert.equal(rows[0].description, 'Bots')
 })
 
 test('wslBundlePage joins a bundle\'s rows with the WSL Host\'s live entries', async () => {
@@ -147,7 +148,7 @@ test('wslBundlePage joins a bundle\'s rows with the WSL Host\'s live entries', a
   const team = wslBundlePage(bundles, plugins, bundles[0].name)
   assert.equal(team.experimental, true)
   assert.equal(team.removable, false)
-  assert.deepEqual(team.rows.map((r) => [r.rowId, r.enabled, r.phase, r.locked, r.title.zh]), [['agent-team', true, 'active', false, '团队协作'], ['gone', false, null, true, 'gone']])
+  assert.deepEqual(team.rows.map((r) => [r.rowId, r.enabled, r.phase, r.locked, r.title]), [['agent-team', true, 'active', false, { en: '团队协作', zh: '团队协作' }], ['gone', false, null, true, 'gone']])
   const bot = wslBundlePage(bundles, plugins, 'ds-bot')
   assert.equal(bot.removable, true)
   assert.equal(bot.source, 'ds-bot@1.0.0')

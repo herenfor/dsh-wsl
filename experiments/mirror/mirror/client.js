@@ -436,12 +436,136 @@ window.__ModuleLoader__.load({
         style: { position: 'relative', width: 36, height: 20, flex: 'none', border: 0, borderRadius: 10, padding: 0, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, background: on ? 'var(--dsw-alias-accent-primary, #4c7cf3)' : 'var(--dsw-alias-fill-secondary, rgba(127,127,127,.35))', transition: 'background .15s' },
       }, h('span', { style: { position: 'absolute', top: 2, left: on ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .15s' } }))
     }
+    // The official component kit, when the page shares it (the Discover tab draws its pages with the same pieces).
+    const UI = (() => { try { return require('@deepseek-ai/dsh-client-ui-primitives') } catch { return undefined } })()
+    const SwitchControl = ({ checked, label, disabled, onChange }) => UI?.Switch
+      ? h(UI.Switch, { checked, label, disabled, onChange })
+      : h(Toggle, { on: checked, busy: disabled, onChange })
+    const TagLabel = ({ tone = 'neutral', children }) => UI?.Tag
+      ? h(UI.Tag, { tone }, children)
+      : h('span', { style: { fontSize: 12, padding: '1px 8px', borderRadius: 6, background: HOVER, color: MUTED } }, children)
+    const Dot = ({ state }) => UI?.StateDot ? h(UI.StateDot, { state }) : h('span', { style: { width: 6, height: 6, borderRadius: 3, background: state === 'done' ? OK : state === 'error' ? ERROR : FAINT } })
+    const Artwork = ({ src, size = 36 }) => {
+      const [failed, setFailed] = React.useState(false)
+      if (src && !failed) return h('img', { src, alt: '', width: size, height: size, style: { objectFit: 'contain' }, onError: () => setFailed(true) })
+      return UI?.PluginArtworkDefault ? h(UI.PluginArtworkDefault, { size }) : h(PenguinIcon)
+    }
+    const iconFrame = (size, child) => h('span', { 'aria-hidden': true, style: { width: size, height: size, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '.5px solid var(--dsw-alias-border-l3, rgba(127,127,127,.3))', borderRadius: 'var(--dsw-radius-lg, 12px)', color: MUTED } }, child)
+    const PHASE_TEXT = { pending: '等待启动', loading: '正在启动', active: '运行中', failed: '启动失败', unloading: '正在停止' }
+    const PHASE_DOT = { pending: 'idle', loading: 'ongoing', active: 'done', failed: 'error', unloading: 'ongoing' }
+    const rowState = (row) => !row.enabled ? ['idle', '已关闭'] : row.phase === null ? ['idle', '未运行'] : [PHASE_DOT[row.phase] ?? 'idle', PHASE_TEXT[row.phase] ?? row.phase]
+    const partsSummary = (rows) => {
+      const running = rows.filter((r) => r.enabled && r.phase === 'active').length
+      const off = rows.filter((r) => !r.enabled).length
+      const failed = rows.filter((r) => r.phase === 'failed').length
+      return [`共 ${rows.length} 个`, ...(running ? [`${running} 运行中`] : []), ...(off ? [`${off} 已关闭`] : []), ...(failed ? [`${failed} 启动失败`] : [])].join(' · ')
+    }
+    const DETAIL_FAILURE = { unavailable: '说明文档读取失败', other: '说明文档读取失败' }
+    // A bundle's long description, read by the WSL Host and drawn with the official document view.
+    function WslDetailDocument({ name, version }) {
+      const language = document.documentElement.lang || navigator.language || 'zh'
+      const [state, setState] = React.useState({ status: 'loading' })
+      const read = () => {
+        setState({ status: 'loading' })
+        api(`wsl-bridge/plugins?${new URLSearchParams({ name, language })}`).then((r) => setState(
+          r.detail ? { status: 'ready', detail: r.detail } : { status: 'error', message: DETAIL_FAILURE[r.detailError] ?? r.error ?? '说明文档读取失败' },
+        ), (e) => setState({ status: 'error', message: String(e) }))
+      }
+      React.useEffect(read, [name, version, language])
+      const path = state.status === 'ready' && state.detail.status === 'found' ? state.detail.path : undefined
+      const images = React.useMemo(() => path === undefined ? undefined : {
+        resolve: (destination) => /^(?:[a-z][a-z\d+.-]*:|\/\/|#)/iu.test(destination) ? undefined
+          : new URL(`wsl-bridge/plugin-file?${new URLSearchParams({ bundle: name, document: path, path: destination })}`, document.baseURI).href,
+      }, [name, path])
+      if (!UI?.DetailDocument) {
+        if (state.status !== 'ready' || state.detail.status !== 'found') return null
+        return h('pre', { style: { whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: MUTED, margin: 0 } }, state.detail.markdown)
+      }
+      const labels = UI.useDetailDocumentLabels({ title: '详细介绍', loading: '正在读取说明…', retry: '重试', copy: '复制', copied: '已复制', codeBlock: '代码', wrap: '自动换行', unwrap: '取消换行', footnotes: '脚注' })
+      return h(UI.DetailDocument, {
+        state: UI.detailDocumentState(state.status === 'ready' ? { status: 'ready', markdown: state.detail.status === 'found' ? state.detail.markdown : undefined } : state),
+        labels, images, onRetry: read,
+      })
+    }
+    // One WSL bundle's page inside the WSL tab, laid out as the Discover tab's pages are.
+    function WslBundlePage({ name, distro, onBack }) {
+      const [page, setPage] = React.useState(null)
+      const [busy, setBusy] = React.useState(null)
+      const [note, setNote] = React.useState(null)
+      const load = () => api(`wsl-bridge/plugins?${new URLSearchParams({ name })}`).then(setPage, (e) => setPage({ connected: false, error: String(e) }))
+      React.useEffect(() => { void load() }, [name])
+      const b = page?.bundle
+      // Components move through loading and unloading on their own; look again until they settle.
+      const settling = b?.rows?.some((r) => r.enabled ? r.phase === 'loading' || r.phase === 'pending' || r.phase === 'unloading' : r.phase !== null && r.phase !== 'failed')
+      React.useEffect(() => { if (!settling) return; const t = setTimeout(() => void load(), 1200); return () => clearTimeout(t) }, [page])
+      const act = async (body, key, what, after) => {
+        setBusy(key); setNote(null)
+        try {
+          const r = await api('wsl-bridge/plugins', body)
+          const app = r.result?.application
+          if (r.error) setNote({ text: `${what}失败：${r.error}`, error: true })
+          else if (r.result?.error) setNote({ text: `${what}失败：${r.result.error.message ?? r.result.error.code}`, error: true })
+          else { setNote({ text: app && app !== 'applied' ? `${what}：${AFTER[app] ?? app}` : `${what}：已生效`, error: app === 'failed' }); after?.(r.result) }
+        } catch (e) { setNote({ text: String(e), error: true }) } finally { setBusy(null); void load() }
+      }
+      const crumb = h('button', { type: 'button', onClick: onBack, style: { alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, border: 0, background: 'transparent', color: FAINT, font: 'inherit', fontSize: 12.5, cursor: 'pointer' } },
+        h('span', { 'aria-hidden': true, style: { display: 'inline-flex', transform: 'rotate(90deg)' } }, UI?.IconChevronDownOutlineRegular ? h(UI.IconChevronDownOutlineRegular, { size: 14 }) : '⌄'), h('span', null, `返回 ${distro} 插件`))
+      const wrap = (...children) => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 4px', maxWidth: 960 } }, crumb, ...children)
+      if (page === null) return wrap(h('div', { style: { color: FAINT, fontSize: 13 } }, '加载中…'))
+      if (!page.connected) return wrap(h('div', { style: { color: FAINT, fontSize: 13 } }, `${distro} 端还没有连接。`))
+      if (page.error && !b) return wrap(h('div', { style: { color: ERROR, fontSize: 13 } }, page.error))
+      if (!b) return wrap(h('div', { style: { color: FAINT, fontSize: 13 } }, `${distro} 里没有找到 ${name}，可能已经卸载。`))
+      const title = pageText(b.title)
+      const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+        iconFrame(48, h(Artwork, { src: b.icon })),
+        h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 } },
+            h('h3', { style: { margin: 0, fontSize: 20, fontWeight: 500, lineHeight: '28px' } }, title),
+            b.version ? h(TagLabel, null, b.version) : null,
+            b.experimental ? h(TagLabel, { tone: 'info' }, '实验性') : null,
+            h(TagLabel, null, distro)),
+          title !== b.name ? h('span', { style: { fontSize: 12, color: FAINT, fontFamily: 'var(--ds-font-family-code, monospace)', overflowWrap: 'anywhere' } }, b.name) : null),
+        h('div', { style: { flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 12 } },
+          b.removable ? h('button', { type: 'button', disabled: busy !== null, onClick: () => { if (window.confirm(`从 ${distro} 卸载 ${title}？`)) void act({ action: 'remove', name: b.name }, 'bundle', `卸载 ${title}`, (r) => { if (r?.application !== 'failed') onBack() }) },
+            style: { padding: '6px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: ERROR, font: 'inherit', fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 } }, '卸载') : null,
+          h(SwitchControl, { checked: b.enabled, label: `在 ${distro} 中启用 ${title}`, disabled: busy !== null || b.readOnly, onChange: (on) => void act({ action: on ? 'enable' : 'disable', name: b.name }, 'bundle', `${on ? '启用' : '停用'} ${title}`) })))
+      const description = pageText(b.description)
+      const rowView = (row) => {
+        const [dot, stateText] = rowState(row)
+        const rowTitle = pageText(row.title)
+        return h('li', { key: row.rowId, style: { display: 'flex', alignItems: 'center', gap: 14, padding: '12px 2px', borderBottom: '.5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2))' } },
+          iconFrame(40, h(Artwork, { src: row.icon, size: 30 })),
+          h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
+            h('span', { style: { fontSize: 14, fontWeight: 500 } }, rowTitle),
+            pageText(row.description) ? h('span', { style: { fontSize: 13, color: MUTED } }, pageText(row.description)) : null,
+            row.diagnostic ? h('span', { style: { fontSize: 12, color: ERROR, overflowWrap: 'anywhere' } }, row.diagnostic) : null,
+            h('span', { style: { fontSize: 12, color: FAINT, fontFamily: 'var(--ds-font-family-code, monospace)', overflowWrap: 'anywhere' } }, row.rowId),
+            h('span', { style: { fontSize: 12, color: FAINT, fontFamily: 'var(--ds-font-family-code, monospace)', overflowWrap: 'anywhere' } }, row.moduleName)),
+          h('span', { style: { flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: MUTED } }, h(Dot, { state: dot }), stateText),
+          h(SwitchControl, { checked: row.enabled, label: `开关组件 ${rowTitle}`, disabled: busy !== null || row.locked,
+            onChange: (on) => void act({ action: 'row', entryId: row.entryId, enabled: on }, `row:${row.rowId}`, `${on ? '打开' : '关闭'} ${rowTitle}`) }))
+      }
+      return wrap(
+        head,
+        description ? h('p', { style: { margin: 0, fontSize: 14, lineHeight: '22px', color: MUTED, overflowWrap: 'anywhere' } }, description) : null,
+        b.error ? h('p', { role: 'status', style: { margin: 0, fontSize: 13, color: ERROR } }, b.error) : null,
+        note ? h('div', { role: 'status', style: { fontSize: 13, color: note.error ? ERROR : OK } }, note.text) : null,
+        h('div', { style: { marginTop: 8 } }, h(WslDetailDocument, { name: b.name, version: b.version })),
+        b.rows.length ? h('section', { style: { display: 'flex', flexDirection: 'column', gap: 4, marginTop: 16 } },
+          h('h4', { style: { margin: 0, fontSize: 14, fontWeight: 500 } }, '包含的组件 ', h('span', { style: { fontWeight: 400, color: MUTED, marginLeft: 8 } }, partsSummary(b.rows))),
+          !b.enabled ? h('span', { style: { fontSize: 12, color: FAINT } }, '插件停用时，组件开关不可用。') : null,
+          h('ul', { style: { margin: 0, padding: 0, listStyle: 'none' } }, b.rows.map(rowView))) : null,
+        b.source ? h('section', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 } },
+          h('h4', { style: { margin: 0, fontSize: 14, fontWeight: 500 } }, '来源'),
+          h('code', { style: { fontSize: 12, color: MUTED, overflowWrap: 'anywhere' } }, b.source)) : null)
+    }
     function WslPluginsTab() {
       const [state, setState] = React.useState(null)
       const [busy, setBusy] = React.useState(null)       // name of the bundle being changed, or 'install'
       const [note, setNote] = React.useState(null)       // { text, error }
       const [spec, setSpec] = React.useState('')
       const [checked, setChecked] = React.useState(null) // inspect result for `spec`
+      const [open, setOpen] = React.useState(null)       // name of the bundle whose page is open
       const load = () => api('wsl-bridge/plugins').then(setState, (e) => setState({ connected: false, error: String(e) }))
       React.useEffect(() => { void load() }, [])
       const act = async (body, key, done) => {
@@ -460,6 +584,7 @@ window.__ModuleLoader__.load({
       const distro = state?.distro ? `WSL（${state.distro}）` : 'WSL'
       const intro = h('p', { style: { margin: '0 0 16px', fontSize: 13, color: MUTED, lineHeight: 1.6 } },
         `这里是装在 ${distro} 里的插件，只对在 WSL 中运行的任务生效。Windows 的插件在「已安装」页管理，两边互不影响。`)
+      if (open !== null) return h(WslBundlePage, { name: open, distro, onBack: () => { setOpen(null); void load() } })
       if (state === null) return h('div', { style: { padding: 24, color: FAINT, fontSize: 13 } }, '加载中…')
       if (!state.connected) {
         return h('div', { style: { padding: '8px 4px' } }, intro, h('p', { style: { fontSize: 13, color: FAINT } },
@@ -470,15 +595,20 @@ window.__ModuleLoader__.load({
         type: 'button', onClick, disabled,
         style: { padding: '6px 12px', borderRadius: 8, border: primary ? 0 : `1px solid ${BORDER}`, background: primary ? 'var(--dsw-alias-accent-primary, #4c7cf3)' : 'transparent', color: primary ? '#fff' : danger ? ERROR : 'inherit', font: 'inherit', fontSize: 13, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' },
       }, label)
-      const row = (b) => h('div', { key: b.name, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)' } },
+      // The whole card opens the bundle's page; its own buttons stop the click.
+      const row = (b) => h('div', { key: b.name, role: 'button', tabIndex: 0, title: '查看详情',
+        onClick: () => setOpen(b.name), onKeyDown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpen(b.name) },
+        onMouseEnter: (e) => { e.currentTarget.style.background = HOVER }, onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent' },
+        style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)', cursor: 'pointer' } },
         b.icon ? h('img', { src: b.icon, alt: '', style: { width: 32, height: 32, flex: 'none', borderRadius: 8 } }) : h('span', { style: { width: 32, height: 32, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, h(PenguinIcon)),
         h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
           h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 } },
             h('span', { style: { fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, pageText(b.title)),
             b.version ? h('span', { style: { fontSize: 12, color: FAINT } }, b.version) : null),
           h('span', { style: { fontSize: 12, color: b.error ? ERROR : MUTED, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, b.error ?? (pageText(b.description) || b.name))),
+        h('span', { style: { display: 'contents' }, onClick: (e) => e.stopPropagation(), onKeyDown: (e) => e.stopPropagation() },
         !b.official && b.installed ? button('卸载', () => { if (window.confirm(`从 ${distro} 卸载 ${pageText(b.title)}？`)) void act({ action: 'remove', name: b.name }, b.name, outcome(`卸载 ${pageText(b.title)}`)) }, { danger: true, disabled: busy !== null }) : null,
-        h(Toggle, { on: b.enabled, busy: busy !== null, onChange: (on) => void act({ action: on ? 'enable' : 'disable', name: b.name }, b.name, outcome(`${on ? '启用' : '停用'} ${pageText(b.title)}`)) }))
+        h(Toggle, { on: b.enabled, busy: busy !== null, onChange: (on) => void act({ action: on ? 'enable' : 'disable', name: b.name }, b.name, outcome(`${on ? '启用' : '停用'} ${pageText(b.title)}`)) })))
       const mine = state.bundles.filter((b) => !b.official)
       const official = state.bundles.filter((b) => b.official)
       const section = (title, items, empty) => h('section', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 } },

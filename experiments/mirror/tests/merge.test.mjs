@@ -133,3 +133,24 @@ test('WSL tab: official optional and installed bundles, mine first; base and int
   assert.deepEqual(rows.map((r) => `${r.name}|${r.title.zh}|${r.enabled}`), ['ds-bot|ds-bot|true', '@deepseek-ai/dsh-x|某功能|false'])
   assert.equal(rows[0].description.en, 'Bots')
 })
+
+test('wslBundlePage joins a bundle\'s rows with the WSL Host\'s live entries', async () => {
+  const { wslBundlePage } = await import('../mirror/plugins.mjs')
+  const bundles = [
+    { name: '@deepseek-ai/dsh-experimental-agent-team-profile', official: true, installed: false, enabled: true, availability: 'installation', removable: false, version: '0.2.2-rc.1',
+      meta: { title: { zh: '智能体团队', en: 'Agent team' } },
+      rows: [{ rowId: 'agent-team', moduleName: '@deepseek-ai/dsh-experimental-agent-team', entryId: 'e1', meta: { title: { zh: '团队协作' } } }, { rowId: 'gone', moduleName: 'x' }] },
+    { name: 'dsh-wsl-agent', official: false, installed: true, enabled: true, rows: [] },
+    { name: 'ds-bot', official: false, installed: true, enabled: false, removable: true, source: 'ds-bot@1.0.0', rows: [] },
+  ]
+  const plugins = [{ entryId: 'e1', enabled: true, fiberPhase: 'active', patchId: 'agent-team' }]
+  const team = wslBundlePage(bundles, plugins, bundles[0].name)
+  assert.equal(team.experimental, true)
+  assert.equal(team.removable, false)
+  assert.deepEqual(team.rows.map((r) => [r.rowId, r.enabled, r.phase, r.locked, r.title.zh]), [['agent-team', true, 'active', false, '团队协作'], ['gone', false, null, true, 'gone']])
+  const bot = wslBundlePage(bundles, plugins, 'ds-bot')
+  assert.equal(bot.removable, true)
+  assert.equal(bot.source, 'ds-bot@1.0.0')
+  assert.equal(wslBundlePage(bundles, plugins, 'dsh-wsl-agent'), undefined)
+  assert.equal(wslBundlePage(bundles, plugins, 'nope'), undefined)
+})

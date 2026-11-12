@@ -15,7 +15,7 @@ import { startBridge } from './transport/client.mjs'
 import { mergeGraphs, requestedPackages, compatibleReleases } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, eventStreamRewriter, FORWARD_REQUEST_HEADERS, isJson, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
-import { wslBundles } from './plugins.mjs'
+import { wslBundles, wslBundlePage } from './plugins.mjs'
 import { toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { translateLoose } from './ids.mjs'
@@ -248,14 +248,40 @@ export async function apply(ctx, config = {}) {
             remove: () => callWsl('removeBundle', { name: body.name }),
             inspect: () => callWsl('inspect', { spec: toWslSpec(String(body.spec ?? '')) }),
             install: () => callWsl('installBundle', { spec: toWslSpec(String(body.spec ?? '')), options: { enabled: true } }),
+            // One component of a bundle, by its Loader entry id, as the official bundle page switches rows.
+            row: () => callWsl('setPluginEnabled', { id: body.entryId, enabled: body.enabled === true }),
           }[body.action]
           if (call === undefined) return reply({ connected: true, distro, error: `unknown action ${body.action}` })
           return reply({ connected: true, distro, result: await call() })
+        }
+        const query = new URL(req.url, 'http://x').searchParams
+        const name = query.get('name')
+        if (name !== null) {
+          // One bundle's page; its document is read on its own, so a failed read leaves the rest of the page.
+          if (query.has('language')) {
+            try { return reply({ connected: true, distro, detail: await callWsl('readBundleDetail', { name, language: query.get('language'), options: { npmFileSources: [] } }) }) } catch (error) { return reply({ connected: true, distro, detailError: error.code === 'plugin-manager/detail-unavailable' ? 'unavailable' : 'other', error: error.message }) }
+          }
+          const [bundles, plugins] = await Promise.all([callWsl('listBundles', {}), callWsl('listPlugins', {})])
+          return reply({ connected: true, distro, bundle: wslBundlePage(bundles, plugins, name) ?? null })
         }
         reply({ connected: true, distro, bundles: wslBundles(await callWsl('listBundles', {})) })
       } catch (error) { reply({ connected: true, distro, error: error.message, code: error.code }) }
     },
   }), 'wsl-mirror: WSL plugins route')
+  // Images beside a WSL bundle's detail document: the WSL Host's own detail-file route, read with this bridge's cookie.
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/plugin-file',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      if (remoteGraph === undefined) { res.writeHead(503); res.end(); return }
+      try {
+        const upstream = await remoteFetch(`/api/plugin-manager/detail-file${new URL(req.url, 'http://x').search}`, { headers: { cookie: await cookie() } })
+        res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/octet-stream', 'cache-control': 'no-store' })
+        res.end(Buffer.from(await upstream.arrayBuffer()))
+      } catch (error) { if (!res.headersSent) res.writeHead(502); res.end() }
+    },
+  }), 'wsl-mirror: WSL plugin detail images')
   const failed = (res, body, error) => {
     let rpcId = null
     try { rpcId = JSON.parse(body.toString('utf8')).rpcId } catch {}

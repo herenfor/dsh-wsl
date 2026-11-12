@@ -89,6 +89,13 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
   - 操作结果写在列表上方；需要重启的写明"完全退出 Desktop，等 5 秒以上再打开"。
 - 接口：`/wsl-bridge/plugins`，GET 返回 `{connected, distro, bundles}`（`plugins.mjs` 的 `wslBundles` 选出和整理），POST `{action: enable|disable|remove|inspect|install, name|spec}` 转给 WSL 端的 `pluginManager`。
 - 验证（测试环境）：「已安装」页 25 个插件，没有 `wsl:` 行、没有标注；WSL 标签页列出 ds-bot、Claude Code 风格和官方可选插件；经这个接口停用 ds-bot 后 WSL 端生效（`applied`）。
+- 详情页（2026-11-12 补上）：WSL 标签页里点任一插件卡片，在标签页内打开它的详情，排版照官方「发现」页的详情（同样挂在 `plugins.tab` 里，自己画返回）。开关、标签、说明文档、默认图标都用页面共享的官方组件（`@deepseek-ai/dsh-client-ui-primitives` 的 `Switch`、`Tag`、`StateDot`、`DetailDocument`、`PluginArtworkDefault`），拿不到时退回自己画的样式。内容：
+  - 返回「WSL（发行版名） 插件」、图标、标题、版本、"实验性"（官方页同一份名单）、发行版标签、包名；右上角卸载（仅第三方）和总开关；
+  - 说明文档：WSL 端 `pluginManager.readBundleDetail` 读出的 Markdown；里面的相对路径图片走新路由 `/wsl-bridge/plugin-file`，转给 WSL 端官方的 `api/plugin-manager/detail-file`；
+  - 「包含的组件」：`listBundles` 的 rows 和 `listPlugins` 的运行状态合起来（`plugins.mjs` 的 `wslBundlePage`，和官方页 `packageView` 同样的拼法），每个组件显示运行中/正在启动/已关闭/启动失败，带单独开关（`setPluginEnabled`）；正在启动或停止时每 1.2 秒刷新一次直到稳定；
+  - 来源（第三方插件安装时的 spec）。
+  - 接口：GET `/wsl-bridge/plugins?name=<包名>` 返回 `{bundle}`，加 `&language=<语言>` 返回说明文档；POST 新增 `{action:'row', entryId, enabled}`。
+  - 验证（测试环境）：Agent teams 详情显示官方说明图；打开插件后 3 个组件变"运行中"，单独关掉 Team panel 后显示"2 运行中 · 1 已关闭"，再打开、再停用，都按预期，测完已恢复；ds-bot 详情显示完整 README 和卸载按钮；返回后列表完好。
 
 ## 安装位置（2026-11-11，已实现并在 WSL 内验证）
 

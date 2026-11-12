@@ -31,3 +31,42 @@ export function wslBundles(bundles) {
     }))
     .sort((a, b) => Number(a.official) - Number(b.official))
 }
+
+// Official bundles the official page marks as experimental (its own list, by name).
+const EXPERIMENTAL = /^@deepseek-ai\/dsh-(experimental-|cua-bundle$|personalized-recommendations$)/
+
+/**
+ * One bundle's page in the WSL tab, as the official bundle page shows it: the bundle with its rows joined to the
+ * WSL Host's live entries (`listPlugins`).
+ * @returns undefined when the WSL Host lists no such bundle, or one the tab does not list.
+ */
+export function wslBundlePage(bundles, plugins, name) {
+  const bundle = bundles.find((b) => b.name === name)
+  if (bundle === undefined || INTERNAL.has(name)) return undefined
+  const [card] = wslBundles([bundle])
+  if (card === undefined) return undefined
+  const rows = (bundle.rows ?? []).map((row) => {
+    const live = row.entryId === undefined ? undefined : plugins.find((p) => p.entryId === row.entryId)
+    return {
+      rowId: row.rowId,
+      moduleName: row.moduleName,
+      title: text(row.meta?.title, row.rowId),
+      description: text(row.meta?.description, ''),
+      icon: typeof row.meta?.icon === 'string' ? row.meta.icon : undefined,
+      enabled: live?.enabled ?? false,
+      phase: live?.fiberPhase ?? null,
+      ...(live?.diagnostic ? { diagnostic: live.diagnostic } : {}),
+      ...(row.entryId !== undefined ? { entryId: row.entryId } : {}),
+      // The official page locks a row the Host cannot address through the profile patch.
+      locked: row.entryId === undefined || live?.readOnlyReason !== undefined,
+    }
+  })
+  return {
+    ...card,
+    experimental: card.official && EXPERIMENTAL.test(name),
+    removable: !!bundle.removable && !card.official,
+    ...(bundle.source ? { source: bundle.source } : {}),
+    ...(bundle.readOnlyReason ? { readOnly: true } : {}),
+    rows,
+  }
+}

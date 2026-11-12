@@ -104,7 +104,8 @@
 ## 还没做
 
 - 发布准备已做（2026-11-12）：包名改为 `@herenfor/dsh-wsl`（`package.json`、`cordis.patch.yml` 的模块名、`client.js` 的模块 ID），版本 0.1.0，去掉 `private`，`publishConfig.access: public`；加了 `icon.svg`（企鹅）、`locale/zh.json` 和 `locale/en.json`（标题、描述，`meta.detail` 指向对应语言的 README）、包内中英文 README。`scripts/assemble.sh` 把 transport 和 agent 拷进包里；`npm pack --dry-run` 核对过内容。测试环境按新包名重装后验证：插件正常加载，「已安装」页显示企鹅图标、"WSL run mode / WSL 运行模式"，详情页按语言显示英文或中文 README。
-- 还要用户做：`npm login` 后在 `experiments/mirror/mirror` 里 `npm publish`（先运行 `scripts/assemble.sh`）；然后在 Desktop 里卸载旧的本地链接安装（旧名 `dsh-wsl-mirror`），再从 npm 安装 `@herenfor/dsh-wsl`。改名后不要再用 `sync-windows.sh` 拷到旧的测试目录：那边的 Desktop 按旧名字链接安装，会找不到插件。
+- 发布流程（2026-11-12）：`scripts/release.sh <版本>` 跑测试、组装、检查包内容、改版本号、提交、打标签并推送；标签触发 `.github/workflows/publish.yml`，用 npm Trusted Publishing 发布（不存 npm 密钥），已在 npm 上的版本跳过。`--dry-run` 只检查不改动；`--local` 在本机发布后再推标签。预发布版本发到 npm 标签 `next`。
+- 还要用户做（测试完成后）：`npm login`，`scripts/release.sh 0.1.0 --local` 发布第一版；到 npmjs.com 给 `@herenfor/dsh-wsl` 添加 Trusted Publisher（GitHub Actions、`herenfor/dsh-wsl`、`publish.yml`）；在 Desktop 里卸载旧的本地链接安装（旧名 `dsh-wsl-mirror`），再从 npm 安装 `@herenfor/dsh-wsl`。改名后不要再用 `sync-windows.sh` 拷到旧的测试目录：那边的 Desktop 按旧名字链接安装，会找不到插件。
 - 开发机切换到正式流程：删除 `C:\Users\S\.dsh-wsl\bridge.json` 后，按设置窗口的命令在 `~/.dsh-wsl` 装一份 DSH。这会改动用户的环境，要先问用户。
 
 ## DSH 0.2.2-rc.2（2026-11-12 检查）

@@ -38,7 +38,9 @@ Desktop (DSH Host + page)                       DSH Host (profile desktop-wsl)
 | `experiments/mirror/agent/` | The WSL-side plugin `dsh-wsl-agent`, carried into WSL by the Desktop-side plugin |
 | `experiments/transport/` | The `wsl.exe` connection: multiplexing (`mux.mjs`), the Desktop end (`client.mjs`), the WSL daemon (`daemon.mjs`) |
 | `experiments/mirror/tests/` | Unit tests |
-| `scripts/assemble.sh` | Copies transport and agent into the plugin package (run before publishing) |
+| `scripts/release.sh` | Releases a version (see below) |
+| `scripts/assemble.sh` | Copies transport and agent into the plugin package |
+| `.github/workflows/publish.yml` | Publishes to npm when a version tag is pushed |
 | `scripts/sync-windows.sh` | Development: assembles, then copies the package into a Windows test folder |
 | `docs/` | Design and experiment notes (in Chinese) |
 
@@ -48,7 +50,21 @@ Desktop (DSH Host + page)                       DSH Host (profile desktop-wsl)
 node --test experiments/mirror/tests/*.test.mjs
 ```
 
-Before publishing, run `scripts/assemble.sh` to copy the latest `experiments/transport` and `experiments/mirror/agent` files into the package's `transport/` and `agent/`, then run `npm publish` in `experiments/mirror/mirror`. (`scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder that a Desktop links to.)
+### Releasing
+
+```bash
+scripts/release.sh 0.1.1 --dry-run   # tests, assembles, checks the package contents; changes nothing
+scripts/release.sh 0.1.1             # then sets the version, commits, tags v0.1.1 and pushes
+```
+
+The pushed tag starts `.github/workflows/publish.yml`, which runs the tests, checks that the tag matches the version and that the package carries the current bridge files, and publishes to npm with npm trusted publishing (no npm token stored in GitHub). A version with a pre-release part (`0.2.0-beta.1`) goes to the npm tag `next`. Installed copies update themselves from npm.
+
+The first release is published from your own machine, because npm only lets a package that already exists set up a trusted publisher:
+
+1. `npm login`, then `scripts/release.sh 0.1.0 --local`.
+2. On npmjs.com, in the settings of `@herenfor/dsh-wsl`, add the trusted publisher: GitHub Actions, repository `herenfor/dsh-wsl`, workflow `publish.yml`.
+
+`scripts/assemble.sh` copies the latest `experiments/transport` and `experiments/mirror/agent` files into the package; the release script runs it. `scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder that a Desktop links to.
 
 ## Documents (in Chinese)
 

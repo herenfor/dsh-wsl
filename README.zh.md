@@ -37,7 +37,9 @@ Desktop（DSH Host + 页面）                 DSH Host（profile desktop-wsl）
 | `experiments/mirror/agent/` | WSL 端插件 `dsh-wsl-agent`，随 Desktop 端插件一起带进 WSL |
 | `experiments/transport/` | `wsl.exe` 连接：多路复用（`mux.mjs`）、Desktop 端（`client.mjs`）、WSL 常驻进程（`daemon.mjs`） |
 | `experiments/mirror/tests/` | 单元测试 |
-| `scripts/assemble.sh` | 把 transport 和 agent 拷进插件包（发布前运行） |
+| `scripts/release.sh` | 发布一个版本（见下） |
+| `scripts/assemble.sh` | 把 transport 和 agent 拷进插件包 |
+| `.github/workflows/publish.yml` | 推送版本标签时发布到 npm |
 | `scripts/sync-windows.sh` | 开发用：组装后再拷到 Windows 测试目录 |
 | `docs/` | 设计和实验记录（中文） |
 
@@ -47,7 +49,21 @@ Desktop（DSH Host + 页面）                 DSH Host（profile desktop-wsl）
 node --test experiments/mirror/tests/*.test.mjs
 ```
 
-发布前先运行 `scripts/assemble.sh`，把 `experiments/transport` 和 `experiments/mirror/agent` 的最新文件拷进插件包的 `transport/` 和 `agent/`，再在 `experiments/mirror/mirror` 里 `npm publish`。（`scripts/sync-windows.sh` 是开发用的：它还会把插件包拷到 Desktop 用 link 安装的 Windows 测试目录。）
+### 发布
+
+```bash
+scripts/release.sh 0.1.1 --dry-run   # 跑测试、组装、检查包内容，不做任何改动
+scripts/release.sh 0.1.1             # 再改版本号、提交、打标签 v0.1.1 并推送
+```
+
+推上去的标签会触发 `.github/workflows/publish.yml`：跑测试，检查标签和版本号一致、包里带的是最新的 WSL 端文件，然后用 npm 的 Trusted Publishing 发布（GitHub 上不存 npm 密钥）。带预发布后缀的版本（如 `0.2.0-beta.1`）发布到 npm 标签 `next`。已安装的插件会从 npm 自动更新。
+
+第一次发布要在自己电脑上做，因为 npm 只允许已经存在的包配置 Trusted Publishing：
+
+1. `npm login`，然后 `scripts/release.sh 0.1.0 --local`。
+2. 到 npmjs.com 上 `@herenfor/dsh-wsl` 的设置里添加 Trusted Publisher：GitHub Actions，仓库 `herenfor/dsh-wsl`，工作流 `publish.yml`。
+
+`scripts/assemble.sh` 把 `experiments/transport` 和 `experiments/mirror/agent` 的最新文件拷进插件包，发布脚本会自动运行它。`scripts/sync-windows.sh` 是开发用的：它还会把插件包拷到 Desktop 用 link 安装的 Windows 测试目录。
 
 ## 文档
 

@@ -807,7 +807,7 @@ window.__ModuleLoader__.load({
         onClick: () => setOpen(b.name), onKeyDown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpen(b.name) },
         onMouseEnter: (e) => { e.currentTarget.style.background = HOVER }, onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent' },
         style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)', cursor: 'pointer' } },
-        b.icon ? h('img', { src: b.icon, alt: '', style: { width: 32, height: 32, flex: 'none', borderRadius: 8 } }) : h('span', { style: { width: 32, height: 32, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, h(PenguinIcon)),
+        h('span', { style: { width: 32, height: 32, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, overflow: 'hidden' } }, h(Artwork, { src: b.icon, size: 32 })),
         h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
           h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 } },
             h('span', { style: { fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, pageText(b.title)),

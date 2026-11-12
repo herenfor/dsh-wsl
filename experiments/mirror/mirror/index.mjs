@@ -3,7 +3,7 @@
 // requests are forwarded to the WSL Host. It patches two members of the registry instance (`composed` and
 // `fetchBundle`) and restores them on dispose. HTTP routes that only the WSL Host serves (those of plugins installed
 // only in WSL) are registered here too and forwarded, after this Host's own login and origin check.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -37,6 +37,15 @@ export const BRIDGE_FILE = join(homedir(), '.dsh-wsl', 'bridge.json')
 export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
 export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro, mode, dshEntry } chosen by the person
 export const PROBE_LOG = join(homedir(), '.dsh-wsl', 'setup-probe.log')  // the last look into the distribution
+export const BRIDGE_LOG = join(homedir(), '.dsh-wsl', 'bridge.log')       // the bridge's own lines and the WSL side's stderr
+/** Append to the bridge log, kept under 512 KB (the older half moves to bridge.log.old). */
+function logBridge(line) {
+  try {
+    mkdirSync(dirname(BRIDGE_LOG), { recursive: true })
+    try { if (statSync(BRIDGE_LOG).size > 512 << 10) renameSync(BRIDGE_LOG, `${BRIDGE_LOG}.old`) } catch {}
+    appendFileSync(BRIDGE_LOG, `${new Date().toISOString()} ${line}\n`)
+  } catch {}
+}
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 function writeStatus(status) {
   try { mkdirSync(dirname(STATUS_FILE), { recursive: true }); writeFileSync(STATUS_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...status }, null, 2)}\n`) } catch {}
@@ -105,7 +114,7 @@ export async function apply(ctx, config = {}) {
     if (status.state !== 'ready') ctx.logger.info('wsl-mirror: WSL side not ready: %s%s', status.state, status.distro ? ` (${status.distro})` : '')
     return status.bridge ?? null
   }
-  const bridge = startBridge({ resolve: resolveBridge, caps: process.env.DSH_WSL_NO_BROKER ? [] : ['credentials'], log: (m) => ctx.logger.info('wsl-mirror: %s', m) })
+  const bridge = startBridge({ resolve: resolveBridge, caps: process.env.DSH_WSL_NO_BROKER ? [] : ['credentials'], log: (m) => { ctx.logger.info('wsl-mirror: %s', m); logBridge(m) } })
   ctx.effect(() => () => bridge.close(), 'wsl-mirror: bridge')
 
   // Credential broker, Desktop half (docs/credentials.md, option 3): the WSL DSH Host asks for a credential when it
@@ -378,7 +387,7 @@ export async function apply(ctx, config = {}) {
         : job.failure === 'network' ? pick({ zh: '网络连接失败，可以稍后重试。', en: 'The network connection failed; try again later.' })
           : job.failure === 'exit' ? pick({ zh: `安装失败（退出码 ${job.code}）`, en: `The install failed (exit code ${job.code})` }) : job.error ?? null } : null,
       error: s.error ?? (dsh.state === 'stopped' ? dsh.exit?.error ?? `DSH exited (${dsh.exit?.code ?? dsh.exit?.signal ?? '?'})` : failed ? bridge.state.lastError : null),
-      log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null,
+      log: s.home ? `${s.home}/.dsh-wsl/run/desktop-wsl/daemon.log` : null, bridgeLog: BRIDGE_LOG,
     }
   }
   // This plugin's own version, for the setup window. It is updated only from the Plugins page, by the person: an

@@ -62,7 +62,7 @@
 - 侧栏底部显示「启动失败」时，点它可以看到错误信息。
 - 找不到你的 dsh 或 Node.js 时，设置窗口会列出查过的位置。最近一次检查的完整输出在 Windows 上的 `%USERPROFILE%\.dsh-wsl\setup-probe.log`。
 - 选了复用、之后那份 dsh 找不到了（被移走或删除），WSL 端不会启动，设置窗口会请你填它的新位置；插件不会自己改用插件专用的一份。
-- WSL 端日志在 `~/.dsh-wsl/run/desktop-wsl/daemon.log`。
+- WSL 端日志在 `~/.dsh-wsl/run/desktop-wsl/daemon.log`。WSL 端还没来得及写这个日志就失败时，报错在 Windows 上的 `%USERPROFILE%\.dsh-wsl\bridge.log`。
 - 反馈：<https://github.com/herenfor/dsh-wsl/issues>
 
 ## 已知限制

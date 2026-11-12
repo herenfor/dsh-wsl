@@ -19,7 +19,7 @@ import { inLanguage } from './language.mjs'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, posix, win32 } from 'node:path'
+import { join, posix, relative, win32 } from 'node:path'
 
 export const NODE_VERSION = '24.22.2'
 export const MIN_NODE = [24, 9, 0]
@@ -317,31 +317,54 @@ export function promptFor(status, desktopVersion, lang = 'zh') {
   return inLanguage(lang, { zh, en }).join('\n')
 }
 
-/** Content stamp of the bridge files this plugin carries (transport/ and agent/). */
-export function stampOf(dirs) {
-  const hash = createHash('sha256')
-  for (const dir of dirs) for (const name of readdirSync(dir).sort()) {
-    const path = join(dir, name)
-    if (statSync(path).isFile()) hash.update(name).update(readFileSync(path))
+// The bridge files' layout. Part of the stamp, so a change of how they are laid out (or a copy an earlier version
+// got wrong) is copied again. 2: 0.1.4, after 0.1.3 and earlier copied nothing when the plugin was installed under a
+// node_modules folder (every npm install) yet wrote the STAMP.
+const BRIDGE_LAYOUT = 2
+/** Files the WSL side cannot start without: a bridge missing one is copied again whatever its STAMP says. */
+export const BRIDGE_REQUIRED = ['transport/daemon.mjs', 'transport/mux.mjs', 'agent/index.mjs', 'agent/package.json']
+
+/** The files under `dir`, as paths relative to it ('/'-separated, sorted), leaving out nested node_modules. */
+function filesUnder(dir, prefix = '') {
+  const out = []
+  for (const name of readdirSync(join(dir, prefix)).sort()) {
+    const rel = prefix ? `${prefix}/${name}` : name
+    const stat = statSync(join(dir, rel))
+    if (stat.isDirectory()) { if (name !== 'node_modules') out.push(...filesUnder(dir, rel)) }
+    else if (stat.isFile()) out.push(rel)
   }
+  return out
+}
+
+/** Content stamp of the bridge files this plugin carries (transport/ and agent/, with their sub-folders). */
+export function stampOf(dirs) {
+  const hash = createHash('sha256').update(`bridge-layout ${BRIDGE_LAYOUT}\n`)
+  for (const dir of dirs) for (const rel of filesUnder(dir)) hash.update(`${rel}\n`).update(readFileSync(join(dir, rel)))
   return hash.digest('hex').slice(0, 16)
 }
 
 /**
- * Copy transport/ and agent/ into the distribution's ~/.dsh-wsl/bridge when they differ from what is there.
- * `root` is how this Host reaches the distribution's home (\\wsl.localhost\<distro>\home\<user> on Windows).
+ * Copy transport/ and agent/ into the distribution's ~/.dsh-wsl/bridge when they differ from what is there, or when
+ * a file the WSL side needs is missing. `root` is how this Host reaches the distribution's home
+ * (\\wsl.localhost\<distro>\home\<user> on Windows). Throws, without writing the STAMP, when the copy is incomplete.
  */
 export function installBridgeFiles(pluginDir, root) {
   const sources = { transport: join(pluginDir, 'transport'), agent: join(pluginDir, 'agent') }
   const stamp = stampOf(Object.values(sources))
   const target = join(root, '.dsh-wsl', 'bridge')
   const stampFile = join(target, 'STAMP')
-  if (existsSync(stampFile) && readFileSync(stampFile, 'utf8').trim() === stamp) return { stamp, copied: false }
+  const missing = () => BRIDGE_REQUIRED.filter((f) => !existsSync(join(target, ...f.split('/'))))
+  if (existsSync(stampFile) && readFileSync(stampFile, 'utf8').trim() === stamp && missing().length === 0) return { stamp, copied: false }
   mkdirSync(target, { recursive: true })
+  rmSync(stampFile, { force: true })
   for (const [name, from] of Object.entries(sources)) {
     rmSync(join(target, name), { recursive: true, force: true })
-    cpSync(from, join(target, name), { recursive: true, dereference: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) })
+    // Nested node_modules are left out, judged by the path inside the copied folder: the plugin itself is installed
+    // under a node_modules folder, and judging the whole path skipped everything.
+    cpSync(from, join(target, name), { recursive: true, dereference: true, filter: (src) => !relative(from, src).split(/[\\/]/).includes('node_modules') })
   }
+  const left = missing()
+  if (left.length) throw new Error(`copying the bridge files to ${target} left out ${left.join(', ')}`)
   writeFileSync(stampFile, `${stamp}\n`)
   return { stamp, copied: true }
 }
@@ -373,7 +396,9 @@ export async function check({ wsl = 'wsl.exe', desktopVersion, chosen = {}, plug
   status.script = installScript(status, desktopVersion)
   if (status.state === 'ready' && pluginDir) {
     const bridgeDir = posix.join(status.home, '.dsh-wsl', 'bridge')
-    status.files = installBridgeFiles(pluginDir, hostPathOf(platform, status.distro, status.home))
+    try { status.files = installBridgeFiles(pluginDir, hostPathOf(platform, status.distro, status.home)) } catch (error) {
+      return { ...status, state: 'error', error: `${error.message}` }
+    }
     status.bridge = {
       command: wsl,
       args: ['-d', status.distro, '--exec', status.node.path, posix.join(bridgeDir, 'transport', 'daemon.mjs'), '--bridge', '--profile', PROFILE, '--dsh', status.dshEntry, '--stamp', status.files.stamp, ...(status.dshHome ? ['--dsh-home', status.dshHome] : [])],

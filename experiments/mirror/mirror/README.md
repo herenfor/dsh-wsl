@@ -62,7 +62,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 - When the bottom of the sidebar says the WSL side failed to start, click it to see the error.
 - When your dsh or Node.js is not found, the setup window lists where it looked. The full output of the last check is in `%USERPROFILE%\.dsh-wsl\setup-probe.log` on Windows.
 - If you chose to reuse your dsh and it is later not found (moved, removed), the WSL side stays off and the setup window asks for its new location; it does not switch to the plugin's own copy by itself.
-- The WSL side's log is `~/.dsh-wsl/run/desktop-wsl/daemon.log`.
+- The WSL side's log is `~/.dsh-wsl/run/desktop-wsl/daemon.log`. When the WSL side fails before it can write that log, the error is in `%USERPROFILE%\.dsh-wsl\bridge.log` on Windows.
 - Feedback: <https://github.com/herenfor/dsh-wsl/issues>
 
 ## Known limitations

@@ -67,7 +67,7 @@ window.__ModuleLoader__.load({
         entryHint: '可以填命令名（dsh）、DSH 的包文件夹，或包里的 lib/bin.js，例如 ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh。用 WSL 里的路径。', entryUse: '使用这份', entryClear: '清除',
         reuseWhere: '位置：{dir}', needsNodeMin: 'WSL 里没有找到 Node.js {min} 或更新的版本（这份 DSH 要求的）。', needsNodeManager: '用 nvm 等工具管理 Node 的话，也可以自己装一个 Node {major}（例如 nvm install {major}），再点「重新检查」，插件会找到它。',
         checkedTitle: '查过的位置', checkedNode: 'Node.js（需要 {min} 或更新）', checkedNone: '（一个也没找到）', seenFound: '找到', seenMissing: '不存在', seenNotDsh: '不是 DSH', nodeUsable: '可用', nodeTooOld: '版本太低',
-        probeLogAt: '完整的检查输出在 Windows 上的 ', reuseLocal: '你的 dsh 不是 npm 全局安装的（在 {dir}），插件不替你更新它，以免装出第二份。请用你自己的方式把它更新到 {version}，再点「重新检查」。',
+        bridgeLogAt: '连接日志（含 WSL 端启动时的报错）在 Windows 上的 ', probeLogAt: '完整的检查输出在 Windows 上的 ', reuseLocal: '你的 dsh 不是 npm 全局安装的（在 {dir}），插件不替你更新它，以免装出第二份。请用你自己的方式把它更新到 {version}，再点「重新检查」。',
         backTo: '返回 {distro} 插件', detailNotConnected: '{distro} 端还没有连接。', detailMissing: '{distro} 里没有找到 {name}，可能已经卸载。', experimental: '实验性',
         enableIn: '在 {distro} 中启用 {name}', rowToggle: '开关组件 {name}', parts: '包含的组件', partsDisabled: '插件停用时，组件开关不可用。', source: '来源',
       },
@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({
         entryHint: 'A command name (dsh), the DSH package folder, or lib/bin.js in it, such as ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh. Use the path as WSL sees it.', entryUse: 'Use this one', entryClear: 'Clear',
         reuseWhere: 'Location: {dir}', needsNodeMin: 'No Node.js {min} or newer was found in WSL (this DSH requires it).', needsNodeManager: 'If you manage Node with nvm or a similar tool, you can also install Node {major} yourself (for example nvm install {major}) and click "Check again"; the plugin finds it.',
         checkedTitle: 'Where setup looked', checkedNode: 'Node.js (needs {min} or newer)', checkedNone: '(none found)', seenFound: 'found', seenMissing: 'not there', seenNotDsh: 'not DSH', nodeUsable: 'usable', nodeTooOld: 'too old',
-        probeLogAt: 'The full check output is on Windows at ', reuseLocal: 'Your dsh is not an npm global install (it is in {dir}), so the plugin does not update it, which would put a second copy beside it. Update it to {version} your own way, then click "Check again".',
+        bridgeLogAt: "The connection log (including the WSL side's start-up errors) is on Windows at ", probeLogAt: 'The full check output is on Windows at ', reuseLocal: 'Your dsh is not an npm global install (it is in {dir}), so the plugin does not update it, which would put a second copy beside it. Update it to {version} your own way, then click "Check again".',
         backTo: 'Back to {distro} plugins', detailNotConnected: '{distro} is not connected.', detailMissing: '{name} was not found in {distro}; it may have been uninstalled.', experimental: 'Experimental',
         enableIn: 'Enable {name} in {distro}', rowToggle: 'Turn component {name} on or off', parts: 'Components', partsDisabled: 'Component switches are unavailable while the plugin is disabled.', source: 'Source',
       },
@@ -488,6 +488,7 @@ window.__ModuleLoader__.load({
           s.error ? h(CodeBlock, { text: s.error }) : null,
           s.probeError ? h(CodeBlock, { text: s.probeError }) : null,
           s.log ? note(t('logAt'), code(s.log), t('logAtEnd')) : null,
+          s.bridgeLog ? note(t('bridgeLogAt'), code(s.bridgeLog), t('logAtEnd')) : null,
         ]
         else if (s.state === 'restart-required') body = [para(t('restartBody')), note(t('restartNote'))]
         else if (s.state === 'starting' || s.state === 'checking') body = [para(t('setupStarting')), note(t('startingNote'))]

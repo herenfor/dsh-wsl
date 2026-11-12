@@ -7,6 +7,22 @@ import http from 'node:http'
 import { Mux } from './mux.mjs'
 
 /**
+ * The part of a bridge process's stderr worth showing: from the first error line (Node's crash report puts it after
+ * the source excerpt and before the stack), without the stack; else the last lines. Node's crash report ends with
+ * "Node.js v24.x", which alone says nothing.
+ */
+export function stderrSummary(text) {
+  const lines = text.replace(/\r/g, '').split('\n').map((l) => l.trimEnd()).filter(Boolean)
+  const first = lines.findIndex((l) => /^(\w*Error|Uncaught)\b|^\S.*\bERR_[A-Z_]+\b/.test(l))
+  if (first >= 0) {
+    const out = []
+    for (const l of lines.slice(first)) { if (/^\s+at\s/.test(l) || out.length >= 6) break; out.push(l) }
+    return out.join('\n')
+  }
+  return lines.filter((l) => !/^Node\.js v\d/.test(l)).slice(-3).join('\n')
+}
+
+/**
  * @param options.command - executable, e.g. 'wsl.exe' (or process.execPath in tests)
  * @param options.args - its arguments, ending in '--bridge'
  * @param options.resolve - instead of command/args: async () => {command, args} or null when the WSL side is not set
@@ -30,7 +46,14 @@ export function startBridge({ command, args, resolve, caps = [], log = () => {} 
     if (stopped) return
     if (!target) { set({ connected: false, dsh: { state: 'unknown' } }); return }
     child = spawn(target.command, target.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
-    child.stderr.on('data', (c) => { const text = c.toString('utf8').trimEnd(); log(`bridge stderr: ${text}`); if (text) set({ lastError: text.split('\n').slice(-1)[0] }) })
+    let stderrTail = ''   // what this bridge process wrote last, for the error shown to the person
+    child.stderr.on('data', (c) => {
+      const text = c.toString('utf8')
+      log(`bridge stderr: ${text.trimEnd()}`)
+      stderrTail = (stderrTail + text).slice(-8192)
+      const summary = stderrSummary(stderrTail)
+      if (summary) set({ lastError: summary })
+    })
     mux = new Mux(child.stdout, child.stdin, { side: 'opener' })
     // Streams the WSL side opens (e.g. {kind:'credentials'}) go to the 'stream' listeners; none → refused.
     mux.on('stream', (stream, target) => { if (bridge.listenerCount('stream') > 0) bridge.emit('stream', stream, target); else stream.destroy(new Error('not served')) })

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { commandsFor, compareVersions, compatibleRelease, decodeWslText, evaluate, hostPathOf, installBridgeFiles, installScript, minNodeOf, nodeOk, parseDistros, parseProbe, probeScript, promptFor } from '../mirror/setup.mjs'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, symlinkSync } from 'node:fs'
+import { chmodSync, rmSync } from 'node:fs'
 
 const utf16 = (text) => Buffer.from(text, 'utf16le')
 
@@ -130,6 +130,7 @@ test('bridge files are copied once per content stamp', () => {
   const plugin = mkdtempSync(join(tmpdir(), 'dsh-wsl-plugin-'))
   mkdirSync(join(plugin, 'transport')); mkdirSync(join(plugin, 'agent'))
   writeFileSync(join(plugin, 'transport', 'daemon.mjs'), 'one'); writeFileSync(join(plugin, 'agent', 'package.json'), '{}')
+  writeFileSync(join(plugin, 'transport', 'mux.mjs'), ''); writeFileSync(join(plugin, 'agent', 'index.mjs'), '')
   const home = mkdtempSync(join(tmpdir(), 'dsh-wsl-home-'))
   const first = installBridgeFiles(plugin, home)
   assert.equal(first.copied, true)
@@ -140,6 +141,40 @@ test('bridge files are copied once per content stamp', () => {
   assert.equal(second.copied, true); assert.notEqual(second.stamp, first.stamp)
   assert.ok(existsSync(join(home, '.dsh-wsl', 'bridge', 'STAMP')))
   assert.equal(hostPathOf('win32', 'Ubuntu', '/home/s'), '\\\\wsl.localhost\\Ubuntu\\home\\s')
+})
+
+test('bridge files are copied when the plugin is installed under node_modules (every npm install)', () => {
+  // 0.1.3 and earlier judged the whole path, so everything was skipped and only the STAMP was written.
+  const plugin = join(mkdtempSync(join(tmpdir(), 'dsh-wsl-npm-')), 'node_modules', '@herenfor', 'dsh-wsl')
+  for (const f of ['transport/daemon.mjs', 'transport/mux.mjs', 'transport/client.mjs', 'agent/index.mjs', 'agent/package.json', 'agent/node_modules/dep/index.js', 'agent/lib/part.mjs']) {
+    mkdirSync(join(plugin, f, '..'), { recursive: true }); writeFileSync(join(plugin, f), f)
+  }
+  const home = mkdtempSync(join(tmpdir(), 'dsh-wsl-home-'))
+  const bridge = join(home, '.dsh-wsl', 'bridge')
+  const first = installBridgeFiles(plugin, home)
+  assert.equal(first.copied, true)
+  for (const f of ['transport/daemon.mjs', 'agent/index.mjs', 'agent/lib/part.mjs']) assert.equal(readFileSync(join(bridge, f), 'utf8'), f)
+  assert.equal(existsSync(join(bridge, 'agent', 'node_modules')), false)   // a nested node_modules is still left out
+  // A bridge the old copy left with only its STAMP heals by itself, whatever the STAMP says.
+  rmSync(join(bridge, 'transport'), { recursive: true }); writeFileSync(join(bridge, 'STAMP'), `${first.stamp}\n`)
+  assert.equal(installBridgeFiles(plugin, home).copied, true)
+  assert.ok(existsSync(join(bridge, 'transport', 'daemon.mjs')))
+  // A change in a sub-folder changes the stamp.
+  writeFileSync(join(plugin, 'agent/lib/part.mjs'), 'changed')
+  assert.notEqual(installBridgeFiles(plugin, home).stamp, first.stamp)
+  // A copy that leaves out a needed file throws and writes no STAMP.
+  const broken = mkdtempSync(join(tmpdir(), 'dsh-wsl-broken-'))
+  mkdirSync(join(broken, 'transport')); mkdirSync(join(broken, 'agent')); writeFileSync(join(broken, 'transport', 'mux.mjs'), '')
+  const home2 = mkdtempSync(join(tmpdir(), 'dsh-wsl-home-'))
+  assert.throws(() => installBridgeFiles(broken, home2), /left out transport\/daemon\.mjs/)
+  assert.equal(existsSync(join(home2, '.dsh-wsl', 'bridge', 'STAMP')), false)
+})
+
+test('the error shown for a WSL side that failed to start is the error, not Node\'s last line', async () => {
+  const { stderrSummary } = await import('../../transport/client.mjs')
+  const crash = "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find module '/h/.dsh-wsl/bridge/transport/daemon.mjs'\n    at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n{\n  code: 'ERR_MODULE_NOT_FOUND'\n}\n\nNode.js v24.22.3\n"
+  assert.equal(stderrSummary(crash), "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/h/.dsh-wsl/bridge/transport/daemon.mjs'")
+  assert.equal(stderrSummary('one\ntwo\nthree\nfour\nNode.js v24.22.3\n'), 'two\nthree\nfour')
   assert.equal(hostPathOf('linux', 'Ubuntu', '/home/s'), '/home/s')
 })
 

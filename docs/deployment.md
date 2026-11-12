@@ -167,3 +167,14 @@
 复用的边界（写进了 README）：复用是直接用 Node 运行用户那份 DSH 包，数据在 `~/.dsh`；不经过用户自己的启动脚本或包装器，那里设置的环境变量、端口、`DSH_HOME` 都不会带过来。
 
 验证：单元测试加了 `minNodeOf`、填的位置优先、本地安装不是全局、`reuse-missing`、按 `engines` 判断 Node、只缺 Node 时的命令；另有一个测试在临时 home 里真的运行探测脚本（本地安装、pnpm 的 shim、`.bin/dsh` 的 shim、nvm 的 Node、带引号的路径）。在本机跑探测脚本约 60 ms，结果和以前一致。测试 Desktop（模拟的 wsl.exe）里：填一个不存在的位置得到 `reuse-missing` 并列出查过的位置；改填本地安装的位置后点“使用这份”，几秒内连上；只给 WSL Node 22 时显示“没有找到 Node.js 24.9.0 或更新的版本”和 nvm 的提示。
+
+## 从 npm 安装时连接文件一个也没复制（2026-11-12，用户报告，0.1.3 及以前）
+
+用户的另一台机器在修好上一节的问题后第一次走到 `ready`，WSL 端起不来，设置窗口只显示“Node.js v24.22.3”。WSL 里的 `~/.dsh-wsl/bridge/` 只有 `STAMP`，没有 `transport/`、`agent/`。
+
+- 原因：`installBridgeFiles` 用 `cpSync` 的 `filter` 跳过 `node_modules`，判断的却是完整的源路径。从 npm 安装时插件本身就在 `…\node_modules\@herenfor\dsh-wsl` 下，于是 `transport`、`agent` 整个被跳过，没有报错，`STAMP` 照写；之后每次检查都因为戳一致直接返回，永远不会补上。
+- 为什么开发机没遇到：开发机的连接文件是早先用本地文件夹链接安装时复制的（路径里没有 `node_modules`），之后 transport 和 agent 的内容没变，戳一直一致，从 npm 装的版本从没重新复制过。测试 Desktop 用 `link:` 安装，路径也没有 `node_modules`。所有全新的 npm 安装第一次连接都会失败。
+- 修复（0.1.4）：过滤改为看复制源内部的相对路径；戳加入布局版本（`BRIDGE_LAYOUT = 2`），并改为递归、带相对路径，0.1.3 及以前写下的戳全部作废，坏掉的环境自己恢复，不用手动删文件；戳一致但缺必需文件（`BRIDGE_REQUIRED`）时也重新复制；复制完缺文件就报错，不写 `STAMP`，设置窗口显示错误。
+- 报错显示：`transport/client.mjs` 以前只保留 stderr 每块的最后一行，Node 崩溃时就只剩“Node.js v24.x”。现在保留最近 8 KB，`stderrSummary` 取第一条错误行（不带调用栈），没有错误行时取最后几行。连接日志（包括 WSL 端的 stderr）写到 Windows 上的 `~/.dsh-wsl/bridge.log`（超过 512 KB 时旧的改名为 `.old`），错误窗口显示它的路径。
+- 验证：单元测试把插件放在 `node_modules/@herenfor/dsh-wsl` 下复制，检查只剩 `STAMP` 的旧环境能自愈、子文件夹的改动会改变戳、复制不全时报错且不写 `STAMP`（这个测试在旧代码上失败）。测试 Desktop 改成从打包文件解压到 `node_modules` 安装（和 npm 安装一样），假 WSL 的 bridge 弄成只剩旧 `STAMP`：启动后自动重新复制、连上，侧栏出现 WSL 文件夹。再把 WSL 端的 `daemon.mjs` 换成会崩溃的文件：设置窗口显示 `Error [ERR_MODULE_NOT_FOUND]: Cannot find module …`，`bridge.log` 里有完整输出。
+- 升级到 0.1.4 后，开发机的戳也会变，连接文件重新复制一次，WSL 端的守护进程会被替换一次（正在运行的 WSL 任务会断开一次）。

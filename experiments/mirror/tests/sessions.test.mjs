@@ -91,3 +91,9 @@ test('plugin bodies: WSL Session and Workspace ids are prefixed by value, and st
   const out = Buffer.concat([sse(Buffer.from(`event: message\ndata: {"sessionId":"${s.slice(0, 10)}`)), sse(Buffer.from(`${s.slice(10)}"}\n\n`))]).toString()
   assert.equal(out, `event: message\ndata: {"sessionId":"wsl:${s}"}\n\n`)
 })
+
+test('a late control baseline becomes one projection frame per Session', async () => {
+  const { baselineFrames } = await import('../mirror/sessions.mjs')
+  const frames = baselineFrames(prefixProjections({ projections: { s1: { asOfSeq: 7, values: { title: 'T', subagentCatalog: [] } } } }))
+  assert.deepEqual(frames, [{ type: 'projection', sessionId: 'wsl:s1', seq: 7, changes: [{ key: 'title', val: 'T' }, { key: 'subagentCatalog', val: [] }] }])
+})

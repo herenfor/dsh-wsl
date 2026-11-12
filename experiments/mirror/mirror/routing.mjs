@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { isWsl, routeOf, toPage, toWsl, translate } from './ids.mjs'
-import { applyWorkspaceFrame, localizeSessions, mergeWorkspaces, pathMapping, placeSession, prefixEvent, prefixProjections } from './sessions.mjs'
+import { applyWorkspaceFrame, baselineFrames, localizeSessions, mergeWorkspaces, pathMapping, placeSession, prefixEvent, prefixProjections } from './sessions.mjs'
 import { remoteError, upgradeHeaders, WslMux } from './remote-mux.mjs'
 
 /** Namespaces that belong to this Host whatever they name (handled elsewhere or never per-session). */
@@ -415,7 +415,10 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
         }
         if (item.down) continue
         if (item.value.type === 'baseline') {
-          if (item.source === 'wsl') throw remoteError({ code: 'gateway/carrier', message: 'The WSL Host reconnected.' })
+          // The page does not reopen a failed control stream, so a WSL Host that connects late (it starts with the
+          // Desktop, after the page) or reconnects is folded in as one projection frame per Session: the page's
+          // stores keep the higher seq per key, as with any live frame.
+          if (item.source === 'wsl') { yield* baselineFrames(prefixProjections(item.value.value)); continue }
           throw remoteError({ code: 'gateway/carrier', message: 'Session control restarted.' })
         }
         yield item.value

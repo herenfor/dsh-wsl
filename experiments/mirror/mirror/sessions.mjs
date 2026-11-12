@@ -63,6 +63,14 @@ export function mergeWorkspaces(local = empty(), wsl = empty(), paths) {
 /** Session summaries from the WSL Host, with paths as this Host shows them. */
 export const localizeSessions = (items, paths) => items.map((s) => (typeof s.cwd === 'string' ? { ...s, cwd: paths.toLocal(s.cwd) } : s))
 
+/** A `session/control` baseline as live projection frames, one per Session (for a baseline that arrives late). */
+export const baselineFrames = (baseline) => Object.entries(baseline.projections ?? {}).map(([sessionId, block]) => ({
+  type: 'projection',
+  sessionId,
+  seq: block.asOfSeq ?? 0,
+  changes: Object.entries(block.values ?? {}).map(([key, val]) => ({ key, val })),
+}))
+
 /** `session/control` baseline from the WSL Host: its projections are keyed by Session id. */
 export const prefixProjections = (baseline) => ({
   ...baseline,

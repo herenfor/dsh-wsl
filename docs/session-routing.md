@@ -106,5 +106,11 @@ Two things make the WSL folders and tasks show up once it connects, without relo
   WSL Host's list is fetched once and announced to the page as `api-session/added` (merged by id). Live
   `api-session/added` events from WSL also get their `cwd` mapped to the Windows path.
 
+- `session/control` (live projections: titles, subagent catalogs, …) waits 3 s for the WSL baseline, then starts
+  without it. A WSL baseline that comes later (or after a WSL reconnect) is sent as one `projection` frame per
+  Session (`baselineFrames`). It used to end the stream with a carrier error instead, but the page does not reopen
+  a failed control stream: every live projection, Windows Sessions included, then stopped until a Session was
+  opened again (seen as titles and the "3 subagents" header only appearing after clicking the task).
+
 The sidebar forgets the expansion of folders it does not see at load, so WSL folders come back collapsed; a click
 opens them.

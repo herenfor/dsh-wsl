@@ -6,6 +6,10 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 
 > Beta. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
 
+![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-en.webp)
+
+<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors.</sub>
+
 ## What it does
 
 - **Choose where each task runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.
@@ -16,6 +20,8 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 - **Desktop's settings win**: settings you can change in Desktop (model, theme, language and so on) are copied one way into WSL; settings only WSL plugins have stay in WSL.
 - **Starts and stops with Desktop**: the WSL side starts when Desktop opens and exits about 5 seconds after Desktop closes.
 - **Follows DSH's language**: Chinese and English for now; other languages show English.
+
+![The run-location menu](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-en.webp)
 
 ## Requirements
 
@@ -32,6 +38,9 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
    - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.
 
    If Node.js or DSH is missing, the window lists the commands to run, and under "Where setup looked" which places were checked. Node.js must be as new as your DSH asks for (24.9 or newer for DSH 0.2); one installed with nvm, fnm, asdf, mise or Volta is found too, so with nvm you can also run `nvm install 24` and click "Check again". Click "Install automatically", click "Let DSH install it" to have the Windows DSH run them, or run them yourself in a WSL terminal. The plugin never downloads anything in the background on its own.
+
+   ![First-run setup: reuse your own dsh or use a copy of its own](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/setup-en.webp)
+
 4. Once connected, the loading note at the bottom of the sidebar goes away and the WSL folders and tasks appear in the sidebar.
 
 ### Other ways to install
@@ -51,6 +60,10 @@ Desktop runs its WSL tasks in a profile of its own in WSL, `desktop-wsl`. Where 
 Install here:
 
 Plugins → "WSL (distribution)" → enter an npm package name, git URL or local folder path in the install box → Check → Install. Windows paths are turned into WSL paths. When it says a restart is needed, quit Desktop completely, wait at least 5 seconds and open it again.
+
+![The WSL tab on the Plugins page](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/plugins-en.webp)
+
+![A WSL plugin's page](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/detail-en.webp)
 
 ## Updates
 

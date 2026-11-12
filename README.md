@@ -8,6 +8,12 @@ Built only from plugins and external components; no official code is changed.
 
 Status: beta, published on npm as `@herenfor/dsh-wsl`. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far.
 
+![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](docs/screenshots/home-en.webp)
+
+![The WSL tab on the Plugins page](docs/screenshots/plugins-en.webp)
+
+<sub>Screenshots from a test environment, for illustration only. Third-party plugins shown: the desktop pet [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) (PC2005-cloud; code MIT, character art not for commercial use), [DS Bot](https://github.com/Fei2411/DS-Bot) (Fei2411, Apache-2.0), [Claude Code Style](https://github.com/Nwflower/dsh-claude-style) (Nwflower, MIT) and [dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning) (MIT). Names and artwork belong to their authors.</sub>
+
 ## Use
 
 Installing, features, updates, uninstalling and known limitations are in the plugin's README: [experiments/mirror/mirror/README.md](experiments/mirror/mirror/README.md).

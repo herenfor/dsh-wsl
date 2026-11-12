@@ -6,6 +6,10 @@
 
 > 测试版。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。遇到问题欢迎到 [GitHub](https://github.com/herenfor/dsh-wsl/issues) 反馈。
 
+![新任务页：侧栏同时列出 Windows 和 WSL 的任务，输入框下方选运行位置；右下角的桌宠是装在 WSL 里的插件](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-zh.webp)
+
+<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。</sub>
+
 ## 能做什么
 
 - **每个任务自己选在哪里运行**：在新任务页的输入框下方选「Windows」或「WSL（发行版名）」。WSL 里的文件夹（`\\wsl.localhost\…`）总是在 WSL 中运行。
@@ -16,6 +20,8 @@
 - **设置以 Desktop 为准**：模型、主题、语言等 Desktop 上能调的设置，单向同步到 WSL；只有 WSL 里的插件才有的设置，留在 WSL。
 - **跟着 Desktop 启停**：打开 Desktop 时自动启动 WSL 端，关闭 Desktop 约 5 秒后 WSL 端退出。
 - **界面语言跟随 DSH**：目前有中文和英文，其他语言显示英文。
+
+![运行位置菜单](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/picker-zh.webp)
 
 ## 需要什么
 
@@ -32,6 +38,9 @@
    - **插件专用一份**：装在 `~/.dsh-wsl/dsh`，数据放在 `~/.dsh-wsl/home`，不影响你自己的 dsh。要下载约 250 MB，装好后约占 900 MB。
 
    缺 Node.js 或 DSH 时，窗口里会列出要运行的命令，「查过的位置」里列出检查过哪些地方。Node.js 的版本要满足你那份 DSH 的要求（DSH 0.2 要 24.9 或更新）；用 nvm、fnm、asdf、mise、Volta 装的 Node 也能找到，用 nvm 的话也可以自己 `nvm install 24`，再点「重新检查」。你可以点「自动安装」，点「交给 DSH 安装」让 Windows 端的 DSH 去执行，或者自己在 WSL 终端里运行。插件不会自己在后台下载。
+
+   ![首次设置：复用你装的 dsh，或用插件专用的一份](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/setup-zh.webp)
+
 4. 连上之后，侧栏底部的加载提示会消失，WSL 的文件夹和任务出现在侧栏里。
 
 ### 其他安装方式
@@ -51,6 +60,10 @@ Desktop 在 WSL 里用自己的 profile（`desktop-wsl`）运行任务，插件�
 在这里安装：
 
 插件 →「WSL（发行版名）」→ 在安装框里填 npm 包名、git 地址或本地文件夹路径 → 检查 → 安装。Windows 路径会自动换成 WSL 路径。提示需要重启的，完全退出 Desktop，等 5 秒以上再打开。
+
+![插件页的 WSL 标签页](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/plugins-zh.webp)
+
+![WSL 插件的详情页](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/detail-zh.webp)
 
 ## 更新
 

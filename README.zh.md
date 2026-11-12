@@ -8,6 +8,12 @@
 
 状态：测试版，npm 包名 `@herenfor/dsh-wsl`。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。
 
+![新任务页：侧栏同时列出 Windows 和 WSL 的任务，输入框下方选运行位置；右下角的桌宠是装在 WSL 里的插件](docs/screenshots/home-zh.webp)
+
+![插件页的 WSL 标签页](docs/screenshots/plugins-zh.webp)
+
+<sub>截图来自测试环境，仅作展示。图中的第三方插件：桌宠 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud，代码 MIT，形象素材禁止商用）、[DS Bot](https://github.com/Fei2411/DS-Bot)（Fei2411，Apache-2.0）、[Claude Code 风格](https://github.com/Nwflower/dsh-claude-style)（Nwflower，MIT）、[dsh-runtime-tuning](https://github.com/herenfor/dsh-runtime-tuning)（MIT）。名称和形象归各自作者所有。</sub>
+
 ## 使用
 
 安装、功能、更新、卸载和已知限制，见插件说明：[experiments/mirror/mirror/README.zh.md](experiments/mirror/mirror/README.zh.md)。

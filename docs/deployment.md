@@ -105,7 +105,8 @@
 
 - 发布准备已做（2026-11-12）：包名改为 `@herenfor/dsh-wsl`（`package.json`、`cordis.patch.yml` 的模块名、`client.js` 的模块 ID），版本 0.1.0，去掉 `private`，`publishConfig.access: public`；加了 `icon.svg`（企鹅）、`locale/zh.json` 和 `locale/en.json`（标题、描述，`meta.detail` 指向对应语言的 README）、包内中英文 README。`scripts/assemble.sh` 把 transport 和 agent 拷进包里；`npm pack --dry-run` 核对过内容。测试环境按新包名重装后验证：插件正常加载，「已安装」页显示企鹅图标、"WSL run mode / WSL 运行模式"，详情页按语言显示英文或中文 README。
 - 发布流程（2026-11-12）：`scripts/release.sh <版本>` 跑测试、组装、检查包内容、改版本号、提交、打标签并推送；标签触发 `.github/workflows/publish.yml`，用 npm Trusted Publishing 发布（不存 npm 密钥），已在 npm 上的版本跳过。`--dry-run` 只检查不改动；`--local` 在本机发布后再推标签。预发布版本发到 npm 标签 `next`。
-- 还要用户做（测试完成后）：`npm login`，`scripts/release.sh 0.1.0 --local` 发布第一版；到 npmjs.com 给 `@herenfor/dsh-wsl` 添加 Trusted Publisher（GitHub Actions、`herenfor/dsh-wsl`、`publish.yml`）；在 Desktop 里卸载旧的本地链接安装（旧名 `dsh-wsl-mirror`），再从 npm 安装 `@herenfor/dsh-wsl`。改名后不要再用 `sync-windows.sh` 拷到旧的测试目录：那边的 Desktop 按旧名字链接安装，会找不到插件。
+- 0.1.0 已发布（2026-11-12，用户在本机 `release.sh 0.1.0 --local`）。npm 现在是分阶段发布：`npm publish` 先上传到暂存区（npm 上会出现一条 `0.0.0-stage` 占位记录，不能安装），维护者在 npmjs.com 用 2FA 确认后才上线。当时脚本在确认前就推了标签，工作流在 0.1.0 上线前一分钟查不到它，自己去发布被拒（还没配 Trusted Publisher），包本身不受影响；下载 npm 上的 0.1.0 与 `v0.1.0` 逐文件比对一致。已修：`--local` 发布后等版本在 npm 上可查（直接查 registry，不走本地缓存）再提交、打标签、推送；工作流也直接查 registry，发布失败时再查一次。另外：开了 2FA 之后要重新 `npm login`，旧令牌仍会 403。
+- 还要用户做：到 npmjs.com 给 `@herenfor/dsh-wsl` 添加 Trusted Publisher（GitHub Actions、`herenfor/dsh-wsl`、`publish.yml`）；在 Desktop 里卸载旧的本地链接安装（旧名 `dsh-wsl-mirror`），再从 npm 安装 `@herenfor/dsh-wsl`，按全新用户的流程走一遍。
 - 开发机切换到正式流程：删除 `C:\Users\S\.dsh-wsl\bridge.json` 后，按设置窗口的命令在 `~/.dsh-wsl` 装一份 DSH。这会改动用户的环境，要先问用户。
 
 ## DSH 0.2.2-rc.2（2026-11-12 检查）

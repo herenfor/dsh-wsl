@@ -59,10 +59,7 @@ scripts/release.sh 0.1.1             # then sets the version, commits, tags v0.1
 
 The pushed tag starts `.github/workflows/publish.yml`, which runs the tests, checks that the tag matches the version and that the package carries the current bridge files, and publishes to npm with npm trusted publishing (no npm token stored in GitHub). A version with a pre-release part (`0.2.0-beta.1`) goes to the npm tag `next`. Installed copies update themselves from npm.
 
-The first release is published from your own machine, because npm only lets a package that already exists set up a trusted publisher:
-
-1. `npm login`, then `scripts/release.sh 0.1.0 --local`.
-2. On npmjs.com, in the settings of `@herenfor/dsh-wsl`, add the trusted publisher: GitHub Actions, repository `herenfor/dsh-wsl`, workflow `publish.yml`.
+The workflow publishes only once the package's trusted publisher is set on npmjs.com (settings of `@herenfor/dsh-wsl`: GitHub Actions, repository `herenfor/dsh-wsl`, workflow `publish.yml`). Until then, or to publish from your own machine, use `scripts/release.sh <version> --local` after `npm login`: it publishes, waits until the version is live (approve it on npmjs.com if npm staged it for 2FA approval), then commits, tags and pushes. A failed run changes nothing and can simply be run again.
 
 `scripts/assemble.sh` copies the latest `experiments/transport` and `experiments/mirror/agent` files into the package; the release script runs it. `scripts/sync-windows.sh` is for development: it also copies the package into a Windows test folder that a Desktop links to.
 

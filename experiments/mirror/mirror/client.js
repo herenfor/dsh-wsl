@@ -22,7 +22,8 @@ window.__ModuleLoader__.load({
         wslFolderNote: '浏览 Linux 文件系统；任务在 WSL 中运行，读写更快',
         setupNoWsl: '这台电脑没有安装 WSL', setupNoDistro: 'WSL 里还没有 Linux 发行版', setupWsl1: '这个发行版是 WSL 1，需要 WSL 2', setupChoose: '还没有选择在 WSL 里怎么运行 DSH',
         setupNeedsDsh: 'WSL 里还没有装 DSH', setupVersionMismatch: 'WSL 里的 DSH 版本较旧，需要更新', setupDesktopOutdated: 'Desktop 版本较旧，需要先升级 Desktop',
-        setupInstalling: '正在安装 WSL 端的 DSH…', setupChecking: '正在检查 WSL…', setupStarting: '正在启动 WSL 端…', setupError: 'WSL 端启动失败', setupConnected: '已连接',
+        setupInstalling: '正在安装 WSL 端的 DSH…', setupChecking: '正在检查 WSL…', setupStarting: '正在启动 WSL 端…', setupError: 'WSL 端启动失败', setupConnected: '已连接', setupRestart: '完全退出并重新打开 Desktop 后生效',
+        statusRestart: 'WSL 运行模式：重启 Desktop 后生效', restartBody: 'WSL 运行模式是在 Desktop 运行时装上（或打开）的，要完全退出并重新打开 Desktop 后才会开始工作。', restartNote: '关闭窗口后，如果 Desktop 还在系统托盘里运行，也要在托盘里退出。等 5 秒以上再打开。',
         copy: '复制', copied: '已复制', current: '当前',
         modeAskOwn: 'WSL 里已经装了 DSH {version}。Desktop 在 WSL 里运行任务时，用哪一份？', modeAsk: 'Desktop 在 WSL 里运行任务时，用哪一份 DSH？',
         reuseTitle: '复用你装的 dsh（{version}）', reuseSync: '会话同步：Desktop 里在 WSL 运行的任务，和你在 WSL 里自己用 dsh 时是同一份数据，任务记录、文件夹列表、插件互相都看得到。',
@@ -73,7 +74,8 @@ window.__ModuleLoader__.load({
         wslFolderNote: 'Browse the Linux file system; tasks run in WSL with faster file access',
         setupNoWsl: 'WSL is not installed on this computer', setupNoDistro: 'WSL has no Linux distribution yet', setupWsl1: 'This distribution runs on WSL 1; WSL 2 is needed', setupChoose: 'How DSH runs in WSL is not chosen yet',
         setupNeedsDsh: 'DSH is not installed in WSL yet', setupVersionMismatch: 'The DSH in WSL is too old and needs an update', setupDesktopOutdated: 'Desktop is too old; update Desktop first',
-        setupInstalling: 'Installing DSH in WSL…', setupChecking: 'Checking WSL…', setupStarting: 'Starting the WSL side…', setupError: 'The WSL side failed to start', setupConnected: 'Connected',
+        setupInstalling: 'Installing DSH in WSL…', setupChecking: 'Checking WSL…', setupStarting: 'Starting the WSL side…', setupError: 'The WSL side failed to start', setupConnected: 'Connected', setupRestart: 'quit Desktop completely and open it again to start using it',
+        statusRestart: 'WSL run mode: restart Desktop to start', restartBody: 'WSL run mode was installed (or switched on) while Desktop was running. It starts working once you quit Desktop completely and open it again.', restartNote: 'If Desktop keeps running in the system tray after you close its window, quit it there too. Wait at least 5 seconds before opening it again.',
         copy: 'Copy', copied: 'Copied', current: 'Current',
         modeAskOwn: 'DSH {version} is already installed in WSL. Which copy should Desktop use to run tasks in WSL?', modeAsk: 'Which DSH should Desktop use to run tasks in WSL?',
         reuseTitle: 'Reuse your dsh ({version})', reuseSync: 'Sessions shared: tasks Desktop runs in WSL use the same data as the dsh you run in WSL yourself, so tasks, folders and plugins show up on both.',
@@ -229,7 +231,10 @@ window.__ModuleLoader__.load({
         return () => { document.removeEventListener('mousedown', close, true); document.removeEventListener('keydown', esc, true) }
       }, [open, host])
       const placeholder = h('span', { ref: anchor, style: { display: 'none' } })
-      if (!ReactDOM?.createPortal || !host || !workspaceId || state === null || state.workspaceId !== workspaceId) return placeholder
+      const shown = !!ReactDOM?.createPortal && !!host && !!workspaceId && state !== null && state.workspaceId === workspaceId
+      // The container under the composer takes no room while there is nothing to show.
+      React.useEffect(() => { if (host) host.style.display = shown ? 'flex' : 'none' }, [host, shown])
+      if (!shown) return placeholder
       const wsl = state.target === 'wsl'
       const distro = state.distro ?? 'WSL'
       const choose = async (target) => {
@@ -325,7 +330,7 @@ window.__ModuleLoader__.load({
     const SETUP_KEYS = {
       'no-wsl': 'setupNoWsl', 'no-distro': 'setupNoDistro', wsl1: 'setupWsl1', choose: 'setupChoose', 'needs-node': 'setupNeedsDsh', 'needs-dsh': 'setupNeedsDsh',
       'version-mismatch': 'setupVersionMismatch', 'desktop-outdated': 'setupDesktopOutdated', installing: 'setupInstalling', checking: 'setupChecking',
-      starting: 'setupStarting', error: 'setupError', connected: 'setupConnected',
+      starting: 'setupStarting', error: 'setupError', connected: 'setupConnected', 'restart-required': 'setupRestart',
     }
     /** One line on a setup state, or undefined for a state without one. */
     const setupNote = (state) => (SETUP_KEYS[state] ? t(SETUP_KEYS[state]) : undefined)
@@ -431,6 +436,7 @@ window.__ModuleLoader__.load({
           s.probeError ? h(CodeBlock, { text: s.probeError }) : null,
           s.log ? note(t('logAt'), code(s.log), t('logAtEnd')) : null,
         ]
+        else if (s.state === 'restart-required') body = [para(t('restartBody')), note(t('restartNote'))]
         else if (s.state === 'starting' || s.state === 'checking') body = [para(t('setupStarting')), note(t('startingNote'))]
         else if (s.state === 'connected') {
           body = [para(t('connectedBody', { distro, version: s.wslVersion ?? '' }))]
@@ -559,13 +565,15 @@ window.__ModuleLoader__.load({
       else if (LOADING_STATES.has(setup.state)) text = t('statusStarting', { distro })
       else if (connected && !listed && !settled) text = t('statusLoading')
       else if (setup.state === 'error') text = t('statusFailed', { distro })
+      else if (setup.state === 'restart-required') text = t('statusRestart')
       const modal = dialog ? h(SetupDialog, { key: 'setup', ui, onClose: () => setDialog(false) }) : null
       if (text === undefined) return modal
       const failed = setup.state === 'error'
+      const waiting = !failed && setup.state !== 'restart-required'
       return h(React.Fragment, null, h('button', {
         type: 'button', title: text, onClick: () => setDialog(true), ...hoverable(),
         style: { display: 'flex', alignItems: 'center', justifyContent: wide ? 'flex-start' : 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: wide ? '8px 12px' : '8px 0', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)', background: 'transparent', color: failed ? 'var(--dsw-alias-state-error-primary, #e5484d)' : MUTED, font: 'inherit', fontSize: 13, textAlign: 'left', cursor: 'pointer' },
-      }, failed ? h(PenguinIcon) : h(Spinner), wide ? h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, text) : null), modal)
+      }, waiting ? h(Spinner) : h(PenguinIcon), wide ? h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, text) : null), modal)
     }
 
     // ---- the WSL tab of the Plugins page: the WSL side's plugins, apart from the official Installed tab (Windows').

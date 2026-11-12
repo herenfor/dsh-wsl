@@ -26,7 +26,7 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task set to WSL
 ## Install
 
 1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
-2. Quit Desktop completely, wait at least 5 seconds, then open it again.
+2. Quit Desktop completely (if it keeps running in the system tray, quit it there too), wait at least 5 seconds, then open it again. Until then the plugin does not start working, and the bottom of the sidebar says to restart Desktop.
 3. On the new-task page, switch the run location under the input box to WSL. The first time, "Set up the WSL environment" opens; choose one way:
    - **Reuse your dsh**: offered when WSL already has dsh. Desktop shares data with the dsh you use in WSL yourself, so tasks show up on both; updates update both.
    - **A separate copy for this plugin**: installed in `~/.dsh-wsl/dsh` with its data in `~/.dsh-wsl/home`, leaving your own dsh alone. About 250 MB to download, about 900 MB installed.

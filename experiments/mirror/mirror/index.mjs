@@ -48,7 +48,35 @@ function readBridgeConfig(config) {
 }
 const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return {} } }
 
+// Installed or switched on while Desktop runs: the page and its streams were opened before this plugin could route
+// them, so it would half work (WSL folders without their tasks, a composer that stays grey). Such a load takes over
+// nothing and asks for a restart instead. Only the first load in the process decides: a plugin that came up with the
+// Desktop and is loaded again later (a service it uses restarted) works as before.
+const HOT_LOAD_SECONDS = Number(process.env.DSH_WSL_HOT_LOAD_SECONDS ?? 60)
+function loadedWhileRunning() {
+  const seen = globalThis.__dshWslLoad
+  if (seen === undefined) globalThis.__dshWslLoad = process.uptime() > HOT_LOAD_SECONDS ? 'restart-required' : 'boot'
+  return globalThis.__dshWslLoad === 'restart-required'
+}
+
+/** The plugin when it needs a Desktop restart: its routes say so and nothing else is touched (no WSL, no routing). */
+function applyRestartRequired(ctx) {
+  ctx.logger.info('wsl-mirror: loaded while Desktop was running; it starts working after Desktop restarts')
+  const json = (res, value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
+  const route = (path, value) => ctx.effect(() => ctx.webServer.register({
+    kind: 'exact', path,
+    handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      json(res, value)
+    },
+  }), `wsl-mirror: ${path} (restart required)`)
+  route('/wsl-bridge/setup', { state: 'restart-required', distro: null, distros: [], dev: false, mode: null, own: null, commands: '', prompt: '', canInstall: false, plugin: null, job: null })
+  route('/wsl-bridge/plugins', { connected: false, distro: null, setup: 'restart-required' })
+}
+
 export async function apply(ctx, config = {}) {
+  if (loadedWhileRunning()) return applyRestartRequired(ctx)
   const bridgeConfig = readBridgeConfig(config ?? {})
   // First-run setup (setup.mjs): the state of the WSL side, asked again before every connect and on "re-check".
   let setup = { state: 'checking' }

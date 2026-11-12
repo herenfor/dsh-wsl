@@ -117,7 +117,8 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     const local = (changed) => { replay(req, changed === undefined ? body : Buffer.from(JSON.stringify({ ...message, payload: { ...payload, args: changed } }))); return next() }
 
     if (MERGED_LISTS.has(endpoint)) {
-      const [mine, theirs] = await Promise.all([ownHost(req, pathname, body), rpc(endpoint, translate(args, false)).catch(() => undefined)])
+      const [mine, theirs] = await Promise.all([ownHost(req, pathname, body), rpc(endpoint, translate(args, false)).catch((error) => { debug('merged list', endpoint, 'WSL failed:', error.message); return undefined })])
+      debug('merged list', endpoint, 'local', mine?.result?.ok, mine?.result?.value?.items?.length, 'wsl', theirs?.ok, theirs?.value?.items?.length ?? theirs?.error?.code)
       if (mine?.result?.ok && theirs?.ok) mine.result.value = { ...mine.result.value, items: [...mine.result.value.items, ...localizeSessions(translate(theirs.value, true).items, paths())] }
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(mine))
@@ -342,6 +343,7 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
 
   /** One merged stream: this Host's (`native`, already open) and the WSL Host's, kept open with retries. */
   async function* merged(endpoint, payload, signal, native) {
+    debug('stream open', endpoint, 'wsl available', available())
     const queue = new Queue()
     const scope = new AbortController()
     const combined = AbortSignal.any([signal, scope.signal])
@@ -448,11 +450,14 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
             // The page lists Sessions once per connection (session/list); WSL may come after that (Desktop started
             // first, the person still setting WSL up, the WSL Host restarted). Its Sessions are announced to the page
             // as added, once per WSL connection, which the page merges by id.
+            debug('events: WSL ready', frame.clientId)
             void rpc('session/list', { _request: {} }).then((result) => {
+              debug('events: WSL session list', result?.ok, result?.value?.items?.length ?? result?.error?.code, 'aborted', signal.aborted)
               if (!result?.ok || signal.aborted) return
               for (const summary of localizeSessions(translate(result.value, true).items, paths())) queue.push({ source: 'wsl', value: { type: 'emit', event: 'api-session/added', args: [summary] }, listed: true })
             }).catch((error) => logger.debug('wsl-mirror: WSL session list: %s', error.message))
           }
+          if (item.source === 'local') debug('events: local ready', frame.clientId)
           if (localClient !== undefined && wslClient !== undefined) eventClients.set(localClient, wslClient)
           continue
         }

@@ -18,16 +18,18 @@ function labelled(meta, fallback, side) {
   return { ...(meta ?? {}), title: fallback + tag }
 }
 
-// Labels appended to a title. An official bundle both Hosts ship keeps one row (the page styles official bundles by
-// their exact names); its row switch stays this Host's, so the title tells both sides' states.
-const state = (zh, on) => (zh ? (on ? '已启用' : '未启用') : (on ? 'on' : 'off'))
-const both = (zh, localOn, wslOn) => ` · Windows ${state(zh, localOn)} · WSL ${state(zh, wslOn)}`
+// An official bundle both Hosts ship keeps one row (the page styles official bundles by their exact names), and its
+// switch turns it on or off on both sides (index.mjs). The title says nothing while the sides agree; after one side was
+// switched alone (the WSL switch on the detail page) it says which side has it on.
+const ONLY = { zh: { local: ' · 仅 Windows 启用', wsl: ' · 仅 WSL 启用' }, other: { local: ' · Windows only', wsl: ' · WSL only' } }
 function labelledBoth(meta, fallback, localEnabled, wslEnabled) {
+  if (localEnabled === wslEnabled) return meta
+  const side = localEnabled ? 'local' : 'wsl'
   const title = meta?.title
   if (title && typeof title === 'object') {
-    return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, t + both(lang === 'zh', localEnabled, wslEnabled)])) }
+    return { ...meta, title: Object.fromEntries(Object.entries(title).map(([lang, t]) => [lang, t + (lang === 'zh' ? ONLY.zh : ONLY.other)[side]])) }
   }
-  return { ...(meta ?? {}), title: (typeof title === 'string' ? title : fallback) + both(true, localEnabled, wslEnabled) }
+  return { ...(meta ?? {}), title: (typeof title === 'string' ? title : fallback) + ONLY.zh[side] }
 }
 
 /** Whether a bundle both Hosts have is the official one, shown as a single row. */

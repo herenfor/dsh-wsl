@@ -99,7 +99,7 @@ test('plugins: an official bundle both sides ship is one row telling both states
   const remote = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: false }, { name: 'dsh-runtime-tuning', official: false, rows: [{ rowId: 'r', entryId: 'include:r' }] }]
   const b = mergeBundles(local, remote)
   assert.deepEqual(b.map((x) => `${x.name}|${JSON.stringify(x.meta.title)}|${x.enabled ?? ''}`), [
-    '@deepseek-ai/dsh-x|{"en":"X · Windows on · WSL off","zh":"某功能 · Windows 已启用 · WSL 未启用"}|true',
+    '@deepseek-ai/dsh-x|{"en":"X · Windows only","zh":"某功能 · 仅 Windows 启用"}|true',
     'dsh-wsl-mirror|"dsh-wsl-mirror · Windows"|true',
     'wsl:dsh-runtime-tuning|"dsh-runtime-tuning · WSL"|',
   ])
@@ -148,4 +148,10 @@ test('settings sync: Desktop values are copied field by field; secrets and machi
   assert.deepEqual(syncOps({ user: { a: [1] } }, { user: { a: [1] } }), [])
   const shared = sharedNamespaces([{ ns: 'locale' }, { ns: 'bash-sandbox' }, { ns: 'ui-chat' }], [{ ns: 'locale' }, { ns: 'bash-sandbox' }, { ns: 'runtime-tuning-ui-chat' }])
   assert.deepEqual(shared.map((s) => s.ns), ['locale'])
+})
+
+test('plugins: an official bundle on in both sides or off in both keeps its own title', () => {
+  const row = (enabled) => ({ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled })
+  for (const on of [true, false]) assert.deepEqual(mergeBundles([row(on)], [row(on)])[0].meta.title, { en: 'X', zh: '某功能' })
+  assert.equal(mergeBundles([row(false)], [row(true)])[0].meta.title.zh, '某功能 · 仅 WSL 启用')
 })

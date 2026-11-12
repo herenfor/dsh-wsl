@@ -112,7 +112,7 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
 
 ### 实现（2026-11-11，WSL 内已验证）
 
-- 两边同名、且属于官方的插件只保留一行（不加 `wsl:` 前缀，官方的隐藏、排序、More 收纳和 Experimental 标记都照常）。标题后面写明两边状态，中文为"· Windows 已启用/未启用 · WSL 已启用/未启用"，其他语言为"· Windows on/off · WSL on/off"（2026-11-12 起两边都写明；之前只写 WSL 的状态，"· Windows" 容易被看成"只在 Windows"）。行上的开关是 Windows 的。
+- 两边同名、且属于官方的插件只保留一行（不加 `wsl:` 前缀，官方的隐藏、排序、More 收纳和 Experimental 标记都照常）。行上的开关同时切换两边（先切 WSL，再按原样切本机；`alsoOnWsl`）。两边一致时标题不加后缀；只有在详情页单独切过一边、两边不一致时，标题后面写"· 仅 Windows 启用"或"· 仅 WSL 启用"（其他语言 "· Windows only / WSL only"），再点一次行上的开关两边就重新一致。（2026-11-12 改：之前开关只管本机，标题写"· Windows · WSL 未启用"，用户看不懂，切换后也不像在变。）
 - 插件详情页右上角（官方插槽 `plugins.detail.actions`）加一个 WSL 开关："WSL：未启用 [在 WSL 启用]"。经 mirror 的 `/wsl-bridge/bundle` 读取和切换 WSL 一侧。需要重启 WSL 端才能生效时，会提示出来。
 - 用户自己装的插件不变，仍然两边各一行。
 - 验证：在"Agent teams"详情页点"在 WSL 启用"，WSL 一侧变为已启用；再点停用，恢复原状。B 的 profile 恢复原样。

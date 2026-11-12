@@ -280,6 +280,15 @@ export async function apply(ctx, config = {}) {
     method: 'POST', body,
     headers: { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
   }).then((r) => r.json())
+  async function alsoOnWsl(args) {
+    if (typeof args?.name !== 'string' || typeof args.enabled !== 'boolean') return
+    if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return
+    try {
+      const twin = (await callWsl('listBundles', {})).find((b) => b.name === args.name)
+      if (twin === undefined || !(twin.official || args.name.startsWith('@deepseek-ai/')) || twin.enabled === args.enabled) return
+      await callWsl('setBundleEnabled', { name: args.name, enabled: args.enabled })
+    } catch (error) { ctx.logger.warn('wsl-mirror: switching %s on the WSL side failed: %s', args.name, error.message) }
+  }
   async function pluginCall(req, res, next, pathname, endpoint) {
     const body = await readBody(req)
     const json = (value) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
@@ -294,6 +303,9 @@ export async function apply(ctx, config = {}) {
     const requestId = message?.payload?.args?.requestId ?? message?.payload?.args?.options?.requestId
     const install = INSTALL_ENDPOINTS.has(endpoint)
     const toWsl = stripped.wsl || (requestId !== undefined && wslInstalls.has(requestId)) || (install && installTarget === 'wsl')
+    // The one switch of an official bundle both sides ship sets both sides (the WSL side first; this Host's answer is
+    // the one the page shows).
+    if (!toWsl && endpoint === 'pluginManager/setBundleEnabled') await alsoOnWsl(message?.payload?.args)
     if (!toWsl) {
       // Installing here: a WSL path typed into the dialog becomes the Windows path of the same directory.
       const local = install && process.platform === 'win32' ? withSpec(message.payload, (spec) => toWindowsSpec(spec, remoteGraph?.distro)) : undefined

@@ -7,7 +7,7 @@
 
 export const PREFIX = 'wsl:'
 
-const IDENTITY = /^(?:workspaceIds?|beforeWorkspaceId|(?:[a-zA-Z]*Session|session)Ids?|parentSession|agentId|workspaceFileScopeId|eventId)$/
+const IDENTITY = /^(?:workspaceIds?|beforeWorkspaceId|(?:[a-zA-Z]*Session|session)Ids?|parentSession|agentId|workspaceFileScopeId|eventId|scheduleId)$/
 const resource = (value) => value?.kind === 'session' || value?.kind === 'workspace'
 const member = (value) => (value?.role === 'lead' || value?.role === 'teammate') && typeof value?.name === 'string'
 
@@ -15,9 +15,13 @@ export const isWsl = (id) => typeof id === 'string' && id.startsWith(PREFIX)
 export const toPage = (id) => `${PREFIX}${id}`
 export const toWsl = (id) => (isWsl(id) ? id.slice(PREFIX.length) : id)
 
+/** A scheduled task's id (`schedule-…`), the only identity of the calls about one task (schedule/view, edit, run…). */
+const scheduleId = (value) => typeof value === 'string' && toWsl(value).startsWith('schedule-')
+
 /** The field name an identity value is read under: `id` of a session or workspace reference counts as `sessionId`. */
 function fieldOf(object, name, key) {
   if (name === 'id' && (resource(object) || member(object) || key === 'subagentCatalog' || (key === 'header' && typeof object.version === 'number'))) return 'sessionId'
+  if (name === 'id' && scheduleId(object.id)) return 'scheduleId'
   if (name === 'owner' && typeof object.startedAt === 'number' && object.output && typeof object.kind === 'string') return 'sessionId'
   if (name === 'val' && typeof object.key === 'string') return object.key
   return name

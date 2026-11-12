@@ -16,14 +16,19 @@ import { homedir } from 'node:os'
 import { isWsl, routeOf, toPage, toWsl, translate } from './ids.mjs'
 import { applyWorkspaceFrame, baselineFrames, localizeSessions, mergeWorkspaces, pathMapping, placeSession, prefixEvent, prefixProjections } from './sessions.mjs'
 import { remoteError, upgradeHeaders, WslMux } from './remote-mux.mjs'
+import { mapScheduleCwds, mergeDeleteInactive, mergeModelCatalog, mergePermissionCatalog, mergePresets, mergeScheduleCatalog, mergeScheduleList, mergeWebProviders, placeSchedule } from './hostlists.mjs'
+import { createChoices, hasModel } from './refs.mjs'
 
 /** Namespaces that belong to this Host whatever they name (handled elsewhere or never per-session). */
 const LOCAL_ONLY = /^(?:settings|credentials|plugins|pluginManager|pluginInventory|pluginMarket|pluginRegistryProbe|pluginRecommendations|cordis|account|remoteAccess|productAnalytics|llm|directoryPicker)\//
 const MERGED_LISTS = new Set(['session/list', 'session/search'])
+const SCHEDULE_LISTS = new Set(['schedule/catalog', 'schedule/list', 'schedule/deleteInactive'])
+// Lists a setting picks from: both Hosts' entries, WSL-only ones marked (hostlists.mjs, refs.mjs).
+const PICK_LISTS = new Set(['permissionPresets/catalog', 'web/listProviders', 'session/modelCatalog'])
 const MERGED_STREAMS = new Set(['workspace/follow', 'session/control', '$events'])
 const RUN_TARGETS_FILE = join(homedir(), '.dsh-wsl', 'run-targets.json')
 
-export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, whenAvailable, distro, setupState = () => 'connected' }) {
+export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available, whenAvailable, distro, setupState = () => 'connected', choices = createChoices({ call: {} }) }) {
   const logger = ctx.logger
   const paths = () => pathMapping(process.platform, distro())
 
@@ -176,10 +181,66 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       if (result.ok) result.value = { ...translate(result.value, true), workspace: { ...translate(result.value.workspace, true), path: args.request.path } }
       return reply(res, message.rpcId, result)
     }
+    if (SCHEDULE_LISTS.has(endpoint)) {
+      // Each Host keeps its own scheduled tasks: the page lists both, WSL ids prefixed so later calls go back there.
+      const plan = endpoint === 'schedule/list' ? mergeScheduleList(args.request) : undefined
+      const send = plan ? { ...args, request: plan.ask } : args
+      const [mine, theirs] = await Promise.all([
+        ownHost(req, pathname, Buffer.from(JSON.stringify({ ...message, payload: { ...payload, args: send } }))),
+        rpc(endpoint, send).catch((error) => ({ ok: false, error })),
+      ])
+      if (!mine?.result?.ok) return reply(res, message.rpcId, mine?.result ?? failure('internal', `${endpoint} failed`))
+      if (!theirs.ok) debug('schedule list', endpoint, 'WSL failed:', theirs.error?.message ?? theirs.error?.code)
+      const wslValue = theirs.ok ? fromWslSchedule(theirs.value) : undefined
+      const value = endpoint === 'schedule/catalog' ? mergeScheduleCatalog(mine.result.value, wslValue)
+        : endpoint === 'schedule/list' ? plan.combine(mine.result.value, wslValue)
+        : mergeDeleteInactive(mine.result.value, wslValue)
+      return reply(res, message.rpcId, { ok: true, value })
+    }
+    if (endpoint === 'schedule/create') {
+      // A task that creates its Session runs where that Session would (the folder's run location); one delivered to
+      // an existing Session goes with that Session (routeOf, below).
+      const place = placeSchedule(args.request, folderHost)
+      if (place !== 'by-id') {
+        if (place.host === 'local') {
+          const preset = args.request?.target?.create?.agentPreset
+          const refusal = await wslOnlyPreset(req, preset)
+          if (refusal && preset === defaultChoice()) {
+            const { agentPreset, ...create } = args.request.target.create
+            return local({ ...args, request: { ...args.request, target: { ...args.request.target, create } } })
+          }
+          return refusal ? reply(res, message.rpcId, refusal) : local()
+        }
+        const result = await rpc(endpoint, toWslSchedule(args))
+        return reply(res, message.rpcId, result.ok ? { ok: true, value: fromWslSchedule(result.value) } : result)
+      }
+    }
     if (endpoint === 'agentPresets/list') {
       const { mine, theirs } = await presets(req)
       if (!mine?.ok) return reply(res, message.rpcId, mine ?? failure('internal', 'no preset list'))
-      return reply(res, message.rpcId, { ok: true, value: { ...mine.value, presets: mergePresets(mine.value.presets, theirs) } })
+      const choice = choices.choice('agent-preset-registry').selectedDefault
+      return reply(res, message.rpcId, { ok: true, value: { ...mine.value, presets: mergePresets(mine.value.presets, theirs, { choice, text: presetText() }) } })
+    }
+    if (PICK_LISTS.has(endpoint)) {
+      const [mine, theirs] = await Promise.all([ownHost(req, pathname, body), rpc(endpoint, args).catch(() => undefined)])
+      if (!mine?.result?.ok) return reply(res, message.rpcId, mine?.result ?? failure('internal', `${endpoint} failed`))
+      const wslValue = theirs?.ok ? theirs.value : undefined
+      const label = (name) => `${name} · WSL`
+      const value = endpoint === 'permissionPresets/catalog' ? mergePermissionCatalog(mine.result.value, wslValue, { choice: choices.choice('permission').defaultPreset, label })
+        : endpoint === 'web/listProviders' ? mergeWebProviders(mine.result.value, wslValue, { describe: wslProviderText })
+        : mergeModelCatalog(mine.result.value, wslValue, { choice: modelChoice(), label })
+      return reply(res, message.rpcId, { ok: true, value })
+    }
+    if (endpoint === 'session/selectModel' && typeof args.request?.provider === 'string' && typeof args.request?.model === 'string') {
+      // A model only the other Host has: say where it works instead of letting the task fail at its next turn.
+      const { provider, model } = args.request
+      const [here, there] = isWsl(args.request.sessionId) ? ['wsl', 'windows'] : ['windows', 'wsl']
+      const [mine, other] = await Promise.all([choices.roster(here, req.headers.cookie), choices.roster(there, req.headers.cookie)])
+      if (!hasModel(mine, provider, model) && other.models !== undefined && hasModel(other, provider, model)) {
+        return reply(res, message.rpcId, failure('model/not-available', here === 'windows'
+          ? pick({ zh: `这个模型来自 WSL 中的插件，只能用于在 WSL 运行的任务。`, en: 'This model comes from a plugin in WSL and works only for tasks that run in WSL.' })
+          : pick({ zh: `这个模型只在 Windows 这边有，只能用于在 Windows 运行的任务。`, en: 'This model is available only on Windows and works only for tasks that run on Windows.' })))
+      }
     }
     if (endpoint === 'agentPresets/read') {
       const mine = await ownHost(req, pathname, body)
@@ -194,6 +255,11 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
       const request = args.request ?? {}
       const runsHere = !isWsl(request.workspaceId) && !paths().insideWsl(request.cwd) && (runTargets.get(request.workspaceId) ?? 'local') === 'local'
       const refusal = runsHere ? await wslOnlyPreset(req, request.agentPreset) : undefined
+      if (refusal && request.agentPreset === defaultChoice()) {
+        // The default the person chose lives only in WSL: a task that runs here uses this Host's default instead.
+        const { agentPreset, ...rest } = request
+        return create(req, res, next, message, { ...args, request: rest }, local)
+      }
       if (refusal) return reply(res, message.rpcId, refusal)
       return create(req, res, next, message, args, local)
     }
@@ -207,7 +273,44 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     let route
     try { route = routeOf(args, endpoint) } catch (error) { return reply(res, message.rpcId, failure(error.code, error.message)) }
     if (route === 'local') return local()
+    if (endpoint === 'sessionReferenceResolver/candidates') {
+      // @-mentions in a WSL task list that Host's tasks; their folders are shown as the sidebar shows them.
+      const result = await rpc(endpoint, translate(args, false))
+      return reply(res, message.rpcId, result.ok && Array.isArray(result.value) ? { ok: true, value: localizeSessions(translate(result.value, true), paths()) } : result)
+    }
+    if (endpoint.startsWith('schedule/')) {
+      const result = await rpc(endpoint, toWslSchedule(args))
+      return reply(res, message.rpcId, result.ok ? { ok: true, value: fromWslSchedule(result.value) } : result)
+    }
     return forward(res, pathname, message, payload)
+  }
+
+  const defaultChoice = () => choices.choice('agent-preset-registry').selectedDefault
+  const modelChoice = () => {
+    const c = choices.choice('agent-default-model')
+    return typeof c.provider === 'string' && typeof c.model === 'string' ? { provider: c.provider, model: c.model } : undefined
+  }
+  const OFFICIAL_PRESETS = { standard: { zh: '标准模式', en: 'Standard mode' }, ptc: { zh: 'PTC 模式', en: 'PTC mode' }, minimal: { zh: '极简模式', en: 'Minimal mode' }, cordis: { zh: '创造模式', en: 'Creator mode' } }
+  const presetText = () => ({
+    name: (row) => row.name ?? (OFFICIAL_PRESETS[row.id] ? pick(OFFICIAL_PRESETS[row.id]) : row.id),
+    label: (name) => `${name} · WSL`,
+    windowsUses: (name) => pick({ zh: `作为新任务默认时，只用于在 WSL 运行的任务；在 Windows 运行的任务用「${name}」。`, en: `As the default for new tasks it applies to tasks that run in WSL; tasks that run on Windows use "${name}".` }),
+    wslUses: (name) => pick({ zh: `作为新任务默认时，只用于在 Windows 运行的任务；在 WSL 运行的任务用「${name}」。`, en: `As the default for new tasks it applies to tasks that run on Windows; tasks that run in WSL use "${name}".` }),
+  })
+  const wslProviderText = (kind) => kind === 'search'
+    ? { zh: '来自 WSL 中的插件。选它时，在 WSL 运行的任务用它，在 Windows 运行的任务用 Windows 这边的默认搜索服务。', en: 'From a plugin in WSL. When chosen, tasks that run in WSL use it and tasks that run on Windows use the default search provider on Windows.' }
+    : { zh: '来自 WSL 中的插件。选它时，在 WSL 运行的任务用它，在 Windows 运行的任务用 Windows 这边的默认读取方式。', en: 'From a plugin in WSL. When chosen, tasks that run in WSL use it and tasks that run on Windows use the default fetch provider on Windows.' }
+
+  // Scheduled tasks of the WSL Host: ids prefixed, and the folder a task creates its Session in shown in this Host's
+  // form (\\wsl.localhost\…, D:\…), as the folder list of the schedule page names it.
+  const fromWslSchedule = (value) => mapScheduleCwds(translate(value, true), (cwd) => paths().toLocal(cwd))
+  const toWslSchedule = (args) => mapScheduleCwds(translate(args, false), (cwd) => paths().toWsl(cwd))
+  /** Where a new Session in this folder runs: in WSL for a folder that lives there or whose run location is WSL. */
+  function folderHost(cwd) {
+    if (paths().insideWsl(cwd)) return 'wsl'
+    const same = process.platform === 'win32' ? (a, b) => a?.toLowerCase() === b?.toLowerCase() : (a, b) => a === b
+    const folder = localWorkspaces?.items.find((w) => same(w.path, cwd))
+    return folder !== undefined && runTargets.get(folder.workspaceId) === 'wsl' ? 'wsl' : 'local'
   }
 
   // Agent presets (modes): plugins usually live in WSL, so the mode list shows both Hosts'. A mode only the WSL Host has
@@ -487,10 +590,6 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
 }
 
 /** Both Hosts' modes: this Host's as they are, then the WSL Host's that this one lacks, marked. */
-export function mergePresets(mine, theirs) {
-  const have = new Set(mine.map((p) => p.id))
-  return [...mine, ...theirs.filter((p) => !have.has(p.id)).map((p) => ({ ...p, isDefault: false, name: `${p.name ?? p.id} · WSL` }))]
-}
 
 class Queue {
   values = [];

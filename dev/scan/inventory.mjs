@@ -104,12 +104,21 @@ const SPECIAL = {
   'dynamicCordisRunner/resolveRequestRun': 'by remembered request id',
   'dynamicCordisRunner/invoke': 'by remembered run id',
   'workspace/create': 'WSL path → WSL; else Windows',
-  'agentPresets/list': 'merged: WSL-only presets appended, isDefault false, name + " · WSL"',
   'agentPresets/read': 'Windows, then WSL on not-found',
   'agentPresets/select': 'by agentId; WSL-only preset refused for a Windows task',
   'session/create': 'by run location (folder in WSL / run target / twin); WSL-only preset refused for a Windows task',
   'workspace/insertSessionBefore': 'WSL session in a Windows folder → the twin on WSL',
   'pluginManager/listBundles': 'Windows (the WSL tab uses /wsl-bridge/plugins)',
+  'schedule/catalog': 'merged: both Hosts, WSL task ids prefixed',
+  'schedule/list': 'merged: both Hosts, WSL task ids prefixed',
+  'schedule/deleteInactive': 'sent to both',
+  'schedule/create': 'by target Session, or by the folder\'s run location for a task that creates its Session',
+  'agentPresets/list': 'merged: WSL-only presets marked " · WSL"; the default shown is the person\'s choice (refs.mjs)',
+  'permissionPresets/catalog': 'merged: WSL-only presets marked; default = the person\'s choice',
+  'web/listProviders': 'merged: WSL-only providers described',
+  'session/modelCatalog': 'merged: WSL-only providers and models marked; default = the person\'s choice',
+  'session/selectModel': 'by id (sessionId); a model only the other Host has is refused with where it works',
+  'sessionReferenceResolver/candidates': 'by id (agentId); WSL folders shown in this Host\'s form',
 }
 // Fields that name something a Host has its own list of (category 1 and 4 of the scan).
 const REFERENCE = /preset|model|provider|skill|command|subagent|mcp|permission|plugin|schedule|bundle|profile|theme|language|locale|sandbox|shell|tool/i

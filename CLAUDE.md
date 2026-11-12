@@ -10,7 +10,7 @@
 
 ## 正在做的
 
-**跨两边的兼容扫描**：目标、设计和进度见 [docs/cross-host-scan.md](docs/cross-host-scan.md)。扫描已完成，报告在 [dev/scan/report-2026-11-12.md](dev/scan/report-2026-11-12.md)（重跑：`dev/scan/run.sh`）；下一步是和所有者按报告最后一节定每一类的兼容规则，再改代码，随 0.1.9 发布。起因是"把 WSL 独有的预设设为新任务默认后，Windows 任务建不出来"。
+**跨两边的兼容规则**：扫描报告 [dev/scan/report-2026-11-12.md](dev/scan/report-2026-11-12.md)，规则和实施进度见 [docs/cross-host-rules.md](docs/cross-host-rules.md) 最后一节（A–D 已按推荐实现并测过；剩文档、发版预演）。随 0.1.9 发布。新模块：`refs.mjs`（设置选择、本机专属）、`hostlists.mjs`（主机级列表合并）。
 
 ## 代码入口
 

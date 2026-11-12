@@ -61,7 +61,9 @@ async function newTask(where) {
 const results = []
 for (const c of CASES) {
   console.error(`== ${c.name}`)
+  // Three views: this Host's own, the WSL Host's, and the page's (which shows the choices kept by refs.mjs).
   const before = view(await page('settings/describe', {}, true), c.ns)
+  const beforePage = view(await page('settings/describe', {}), c.ns)
   const beforeWsl = view(await host.call('settings/describe', {}), c.ns)
   if (!before) { results.push({ ...c, skipped: `no ${c.ns} on this Host` }); continue }
   const write = await page('settings/update', { ns: c.ns, patch: c.patch })
@@ -79,10 +81,10 @@ for (const c of CASES) {
 
   // Put things back: archive the tasks, then the user layer as it was (set what it had, unset what it did not).
   for (const t of Object.values(tasks)) if (t.created?.ok) await page('workspace/archiveSession', { request: { sessionId: t.created.sessionId, force: true } })
-  const now = view(await page('settings/describe', {}, true), c.ns)
+  const now = view(await page('settings/describe', {}), c.ns)
   const ops = [
-    ...Object.entries(before.user ?? {}).map(([k, v]) => ({ op: 'set', path: [k], value: v })),
-    ...Object.keys(now?.user ?? {}).filter((k) => !(k in (before.user ?? {}))).map((k) => ({ op: 'unset', path: [k] })),
+    ...Object.entries(beforePage.user ?? {}).map(([k, v]) => ({ op: 'set', path: [k], value: v })),
+    ...Object.keys(now?.user ?? {}).filter((k) => !(k in (beforePage.user ?? {}))).map((k) => ({ op: 'unset', path: [k] })),
   ]
   const restore = ops.length ? await page('settings/mutate', { ns: c.ns, ops, expectedRevision: now?.revision }) : { ok: true }
   let restoredWsl
@@ -91,8 +93,10 @@ for (const c of CASES) {
     if (JSON.stringify(restoredWsl?.user ?? {}) === JSON.stringify(beforeWsl?.user ?? {})) break
     await sleep(500)
   }
-  const restored = JSON.stringify(view(await page('settings/describe', {}, true), c.ns)?.user ?? {}) === JSON.stringify(before.user ?? {})
-    && JSON.stringify(restoredWsl?.user ?? {}) === JSON.stringify(beforeWsl?.user ?? {})
+  const user = (v) => JSON.stringify(v?.user ?? {})
+  const restored = user(view(await page('settings/describe', {}, true), c.ns)) === user(before)
+    && user(view(await page('settings/describe', {}), c.ns)) === user(beforePage)
+    && user(restoredWsl) === user(beforeWsl)
   results.push({
     ...c, write: write?.ok ? 'ok' : write?.error, tasks,
     presetsOnPage: presets?.ok ? presets.value.presets.map((p) => `${p.id}${p.isDefault ? ' (default)' : ''}`) : presets?.error,

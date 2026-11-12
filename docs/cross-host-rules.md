@@ -186,3 +186,25 @@
 - Claude Code MCP 作用域与 `${VAR:-default}`：<https://code.claude.com/docs/en/mcp>
 - Claude Code Desktop（SSH 会话读远程机器的配置、在远程启动 MCP）：<https://code.claude.com/docs/en/desktop>
 - Claude Code Desktop 定时任务（本机和云端同列一页，建时选位置）：<https://code.claude.com/docs/en/desktop-scheduled-tasks>
+
+## 实施进度（2026-11-12，所有者已同意按推荐做）
+
+已完成并在测试环境验证（单元测试 56 个全过，`dev/scan/run.sh` 复扫：动态试写全部能建任务、全部还原）：
+
+- **C 定时任务**：`hostlists.mjs` + `routing.mjs`。列表（catalog/list）合并两边，WSL 定时任务 id 加 `wsl:` 前缀（`ids.mjs` 认 `schedule-` 开头的 `id`），查看、编辑、运行、历史、删除按 id 送回原处；"清理已结束"两边都做；"新建任务"类按文件夹的运行位置去建；目标文件夹路径两边转换写法。
+- **A 指向清单的设置**：`refs.mjs`（规则）+ `index.mjs`（拦截页面写入、同步、读取时叠加）+ `hostlists.mjs`（清单合并）。用户的选择存在 `~/.dsh-wsl/choices.json`；每边存的是选择在那一边能解析出的值（没有就清空，用那边的默认）；页面显示选择。预设、权限预设、搜索服务、模型目录合并两边并标「 · WSL」；默认值只在一边有时，那一条注明另一边用什么。Windows 任务带着"只在 WSL 的默认预设"建任务时改用 Windows 默认；切换到另一边才有的模型会提示。
+- **B 本机专属**：`mcp-manager` 不再同步（`MACHINE_NAMESPACES`）；各处 `*apiKeyEnv` 保留 WSL 自己的值（WSL 还没有时先用 Windows 的）。WSL 插件标签页底部新增"WSL 中的 MCP 服务器"（路由 `/wsl-bridge/mcp`），在那里编辑 WSL 自己的 MCP 配置。已同步过去的配置保留。
+- **D**：WSL 任务的 @ 候选里路径换成 Windows 写法。
+- 顺带修了：同步时 WSL 端值等于它的默认值也会每分钟重写一次（`syncOps` 现在看生效值）。
+
+和推荐方案不同的地方（要告诉所有者）：
+
+- **插件清单（`pluginInventory/list`）没有合并**：设置里"全部插件"页把每条和页面本地模块的加载状态对应，混进 WSL 条目会对不上；WSL 插件已在 WSL 标签页显示。
+- **MCP 状态没有合并**：这一版 DSH 页面没有任何地方调用 `mcpManager/*`，没有显示的地方。
+- **D 的说明文字没加**：@ 候选列表是官方组件，插件加不进说明；改为写进插件说明的「已知限制」（还没写）。
+
+还没做的：
+
+- 插件说明（四份 README）「已知限制」和工作方式的更新；`docs/deployment.md` 写 0.1.9 一节；报告里补一句复扫结果。
+- 测试环境的 `session/list` 每次扫描会多出 20 个已归档任务（`dynamic.mjs` 建的），可以考虑清理。
+- `scripts/release.sh 0.1.9 --dry-run`，然后交给所有者发版。

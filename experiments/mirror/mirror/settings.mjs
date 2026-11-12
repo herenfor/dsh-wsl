@@ -1,4 +1,5 @@
 // Settings for plugins installed only in WSL. Kept free of DSH imports so it can be unit-tested.
+import { MACHINE_NAMESPACES } from './refs.mjs'
 // The page reads every settings namespace with settings/describe and writes one namespace at a time with
 // settings/update, settings/replace or settings/mutate (argument `ns`). A namespace only the WSL Host serves belongs
 // to a plugin installed only there: describe shows it next to this Host's own, and writes to it go to the WSL Host.
@@ -24,8 +25,10 @@ export function mergeDescribe(local, remote) {
 }
 
 // Desktop is the source of truth for every setting both Hosts have: those are copied to the WSL Host, one way.
-// Never copied: secret fields (each side keeps its own), and namespaces that describe one machine only.
-export const NEVER_SYNC = new Set(['bash-sandbox', 'pwsh-sandbox'])
+// Never copied: secret fields (each side keeps its own), and namespaces that describe one machine only (refs.mjs:
+// sandboxes, MCP servers). Fields naming one machine's environment variables, and settings that name an entry of a
+// per-Host list, are prepared by refs.mjs before the copy.
+export const NEVER_SYNC = MACHINE_NAMESPACES
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const secretKeys = (view) => new Set((view?.secrets ?? []).map((s) => s.path?.[0]).filter(Boolean))
@@ -33,7 +36,7 @@ const secretKeys = (view) => new Set((view?.secrets ?? []).map((s) => s.path?.[0
 /**
  * The mutate ops that make the WSL Host's user section of one namespace match this Host's, top-level field by field.
  * @param desktop - this Host's view { user, secrets }.
- * @param wsl - the WSL Host's view { user, secrets }.
+ * @param wsl - the WSL Host's view { user, value, secrets }.
  * @returns ops: set for a differing field, unset for a field only the WSL Host has; secret fields untouched.
  */
 export function syncOps(desktop, wsl) {
@@ -41,7 +44,13 @@ export function syncOps(desktop, wsl) {
   const mine = desktop?.user && typeof desktop.user === 'object' ? desktop.user : {}
   const theirs = wsl?.user && typeof wsl.user === 'object' ? wsl.user : {}
   const ops = []
-  for (const [key, value] of Object.entries(mine)) if (!skip.has(key) && !same(theirs[key], value)) ops.push({ op: 'set', path: [key], value })
+  // A value equal to what the WSL Host already uses (its default) is not stored there as a user value, so it would
+  // look different on every pass: it counts as the same.
+  const effective = wsl?.value && typeof wsl.value === 'object' ? wsl.value : {}
+  for (const [key, value] of Object.entries(mine)) {
+    if (skip.has(key) || same(theirs[key], value) || (!(key in theirs) && same(effective[key], value))) continue
+    ops.push({ op: 'set', path: [key], value })
+  }
   for (const key of Object.keys(theirs)) if (!skip.has(key) && !(key in mine)) ops.push({ op: 'unset', path: [key] })
   return ops
 }

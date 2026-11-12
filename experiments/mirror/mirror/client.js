@@ -58,6 +58,11 @@ window.__ModuleLoader__.load({
         uninstall: '卸载', confirmRemove: '从 {distro} 卸载 {name}？', installTitle: '安装插件到 {distro}', installPlaceholder: 'npm 包名、git 地址或本地文件夹路径',
         installing: '安装中…', install: '安装', check: '检查', notBundle: '（这个包不是 DSH 插件）', installWait: '正在 WSL 中下载和安装，可能需要一两分钟…',
         mine: '我安装的', mineEmpty: '还没有安装第三方插件', official: '官方插件', officialEmpty: '没有可选的官方插件', viewDetails: '查看详情',
+        mcpTitle: '{distro} 中的 MCP 服务器',
+        mcpIntro: '这里的服务器在 {distro} 里启动，只用于在 WSL 运行的任务。Windows 这边的 MCP 设置不会复制过来：命令、路径和环境变量在两边不通用。',
+        mcpWindows: 'Windows 这边配置了：{names}。需要的话，在下面按 WSL 里能运行的命令另外添加。',
+        mcpHint: '格式和 DSH 设置里的 mcp-manager.servers 相同：{ "名字": { "transport": "stdio", "command": "npx", "args": ["-y", "…"] } }',
+        mcpSave: '保存', mcpSaving: '正在保存…', mcpSaved: '已保存。新开的 WSL 任务会用新的服务器列表。', mcpBadJson: '不是有效的 JSON：{error}', mcpUnavailable: 'WSL 端没有 MCP 管理器。',
         phasePending: '等待启动', phaseLoading: '正在启动', phaseActive: '运行中', phaseFailed: '启动失败', phaseUnloading: '正在停止', rowOff: '已关闭', rowIdle: '未运行',
         partsTotal: '共 {count} 个', partsRunning: '{count} 运行中', partsOff: '{count} 已关闭', partsFailed: '{count} 启动失败',
         detailFailed: '说明文档读取失败', docTitle: '详细介绍', docLoading: '正在读取说明…', retry: '重试', codeBlock: '代码', wrap: '自动换行', unwrap: '取消换行', footnotes: '脚注',
@@ -117,6 +122,11 @@ window.__ModuleLoader__.load({
         uninstall: 'Uninstall', confirmRemove: 'Uninstall {name} from {distro}?', installTitle: 'Install a plugin into {distro}', installPlaceholder: 'npm package name, git URL or local folder path',
         installing: 'Installing…', install: 'Install', check: 'Check', notBundle: ' (this package is not a DSH plugin)', installWait: 'Downloading and installing in WSL; this can take a minute or two…',
         mine: 'Installed by you', mineEmpty: 'No third-party plugins installed yet', official: 'Official plugins', officialEmpty: 'No optional official plugins', viewDetails: 'View details',
+        mcpTitle: 'MCP servers in {distro}',
+        mcpIntro: 'These servers start in {distro} and serve tasks that run in WSL. MCP settings on Windows are not copied here: commands, paths and environment variables differ between the two.',
+        mcpWindows: 'Set up on Windows: {names}. Add the ones you need below, with commands that run in WSL.',
+        mcpHint: 'Same format as mcp-manager.servers in the DSH settings: { "name": { "transport": "stdio", "command": "npx", "args": ["-y", "…"] } }',
+        mcpSave: 'Save', mcpSaving: 'Saving…', mcpSaved: 'Saved. New WSL tasks use the new server list.', mcpBadJson: 'Not valid JSON: {error}', mcpUnavailable: 'The WSL side has no MCP manager.',
         phasePending: 'Waiting to start', phaseLoading: 'Starting', phaseActive: 'Running', phaseFailed: 'Failed to start', phaseUnloading: 'Stopping', rowOff: 'Off', rowIdle: 'Not running',
         partsTotal: '{count} in total', partsRunning: '{count} running', partsOff: '{count} off', partsFailed: '{count} failed',
         detailFailed: 'Could not read the description', docTitle: 'Details', docLoading: 'Reading the description…', retry: 'Retry', codeBlock: 'Code', wrap: 'Wrap lines', unwrap: 'Unwrap lines', footnotes: 'Footnotes',
@@ -763,6 +773,39 @@ window.__ModuleLoader__.load({
           h('h4', { style: { margin: 0, fontSize: 14, fontWeight: 500 } }, t('source')),
           h('code', { style: { fontSize: 12, color: MUTED, overflowWrap: 'anywhere' } }, b.source)) : null)
     }
+    // MCP servers of the WSL side (/wsl-bridge/mcp): set here, never copied from Windows (docs/cross-host-rules.md, B).
+    function WslMcpSection({ distro }) {
+      useLanguage()
+      const [state, setState] = React.useState(null)
+      const [text, setText] = React.useState('')
+      const [note, setNote] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const take = (r) => { setState(r); if (r?.servers) setText(JSON.stringify(r.servers, null, 2)) }
+      React.useEffect(() => { api('wsl-bridge/mcp').then(take, (e) => setState({ error: String(e) })) }, [])
+      if (!state || state.connected === false) return null
+      const save = async () => {
+        let servers
+        try { servers = JSON.parse(text || '{}') } catch (e) { setNote({ text: t('mcpBadJson', { error: e.message }), error: true }); return }
+        setBusy(true); setNote(null)
+        try {
+          const r = await api('wsl-bridge/mcp', { servers, revision: state.revision })
+          if (r.error) setNote({ text: r.error, error: true }); else { take(r); setNote({ text: t('mcpSaved') }) }
+        } catch (e) { setNote({ text: String(e), error: true }) } finally { setBusy(false) }
+      }
+      return h('section', { style: { display: 'flex', flexDirection: 'column', gap: 8, padding: 14, marginBottom: 20, border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)' } },
+        h('div', { style: { fontSize: 14, fontWeight: 600 } }, t('mcpTitle', { distro })),
+        h('div', { style: { fontSize: 12, color: MUTED, lineHeight: 1.6 } }, t('mcpIntro', { distro })),
+        state.windows?.length ? h('div', { style: { fontSize: 12, color: MUTED, lineHeight: 1.6 } }, t('mcpWindows', { names: state.windows.join(', ') })) : null,
+        state.error ? h('div', { style: { fontSize: 12, color: ERROR } }, state.error) : null,
+        state.available === false ? h('div', { style: { fontSize: 12, color: FAINT } }, t('mcpUnavailable')) : h(React.Fragment, null,
+          h('textarea', { value: text, spellCheck: false, rows: Math.min(18, Math.max(4, text.split('\n').length + 1)), onChange: (e) => setText(e.target.value),
+            style: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', fontFamily: 'var(--dsw-font-mono, ui-monospace, monospace)', fontSize: 12 } }),
+          h('div', { style: { fontSize: 12, color: FAINT } }, t('mcpHint')),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+            h('button', { type: 'button', onClick: () => void save(), disabled: busy,
+              style: { padding: '6px 12px', borderRadius: 8, border: 0, background: 'var(--dsw-alias-accent-primary, #4c7cf3)', color: '#fff', font: 'inherit', fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 } }, busy ? t('mcpSaving') : t('mcpSave')),
+            note ? h('span', { role: 'status', style: { fontSize: 12, color: note.error ? ERROR : OK } }, note.text) : null)))
+    }
     function WslPluginsTab() {
       useLanguage()
       const [state, setState] = React.useState(null)
@@ -838,7 +881,8 @@ window.__ModuleLoader__.load({
         note ? h('div', { role: 'status', style: { marginBottom: 12, fontSize: 13, color: note.error ? ERROR : OK } }, note.text) : null,
         install,
         section(t('mine'), mine, t('mineEmpty')),
-        section(t('official'), official, t('officialEmpty')))
+        section(t('official'), official, t('officialEmpty')),
+        h(WslMcpSection, { distro }))
     }
 
     return {

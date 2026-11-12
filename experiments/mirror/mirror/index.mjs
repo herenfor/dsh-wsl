@@ -18,6 +18,7 @@ import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncO
 import { wslBundles, wslBundlePage } from './plugins.mjs'
 import { toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
+import { createChoices, intendedSection, overlayView, REFERENCE_NAMESPACES, resolveSection, wslSection } from './refs.mjs'
 import { translateLoose } from './ids.mjs'
 import { builtinRoot, isBuiltin } from './agent/index.mjs'
 import { check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
@@ -39,6 +40,7 @@ export const STATUS_FILE = join(homedir(), '.dsh-wsl', 'mirror-status.json')
 export const CONFIG_FILE = join(homedir(), '.dsh-wsl', 'config.json')   // { distro, mode, dshEntry } chosen by the person
 export const PROBE_LOG = join(homedir(), '.dsh-wsl', 'setup-probe.log')  // the last look into the distribution
 export const BRIDGE_LOG = join(homedir(), '.dsh-wsl', 'bridge.log')       // the bridge's own lines and the WSL side's stderr
+export const CHOICES_FILE = join(homedir(), '.dsh-wsl', 'choices.json')   // settings choices each Host resolves (refs.mjs)
 /** Append to the bridge log, kept under 512 KB (the older half moves to bridge.log.old). */
 function logBridge(line) {
   try {
@@ -268,6 +270,34 @@ export async function apply(ctx, config = {}) {
     method: 'POST', body,
     headers: { cookie: await cookie(), origin: remoteOrigin(), 'content-type': 'application/json' },
   })
+  // The person's choices for settings that name an entry of a per-Host list (refs.mjs), and both Hosts' lists.
+  const callOwn = async (endpoint, args, cookieHeader) => {
+    const r = await fetch(`${ws.getOrigin()}/api/${endpoint}`, {
+      method: 'POST',
+      headers: { cookie: cookieHeader ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'mirror-refs', method: endpoint, payload: { args } }),
+    })
+    const json = await r.json()
+    if (!json?.result?.ok) throw new Error(`${endpoint}: ${json?.result?.error?.message ?? r.status}`)
+    return json.result.value
+  }
+  const callWslApi = async (endpoint, args) => {
+    const r = await forwardApi(`/api/${endpoint}`, Buffer.from(JSON.stringify({ type: 'client-request', rpcId: 'mirror-refs', method: endpoint, payload: { args } })))
+    const json = await r.json()
+    if (!json?.result?.ok) throw new Error(`${endpoint}: ${json?.result?.error?.message ?? r.status}`)
+    return json.result.value
+  }
+  const choices = createChoices({
+    load: () => readJson(CHOICES_FILE),
+    save: (state) => { try { mkdirSync(dirname(CHOICES_FILE), { recursive: true }); writeFileSync(CHOICES_FILE, `${JSON.stringify(state, null, 2)}\n`) } catch {} },
+    call: { windows: callOwn, wsl: callWslApi },
+  })
+  /** A describe value as the page sees it: the person's choices instead of what this Host resolved them to. */
+  const withChoices = (value) => ({
+    ...value,
+    namespaces: value.namespaces.map((view) => (REFERENCE_NAMESPACES.has(view.ns) && !remoteNamespaces.has(view.ns) ? overlayView(view, choices.reconcile(view.ns, view.user)) : view)),
+  })
+
   const answer = async (res, upstream) => {
     res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
     res.end(Buffer.from(await upstream.arrayBuffer()))
@@ -289,6 +319,33 @@ export async function apply(ctx, config = {}) {
     const r = await remoteFetch('/wsl-bridge/follow', { method: 'POST', body: Buffer.from(JSON.stringify(change)), headers: { cookie: await cookie(), origin: remoteOrigin(), 'content-type': 'application/json' } })
     return r.ok ? r.json() : { error: `HTTP ${r.status}` }
   }
+  // MCP servers of the WSL side (docs/cross-host-rules.md, B): their commands run in WSL, so they are set there and
+  // never copied from Desktop. GET → { connected, distro, servers, revision, windows: [names set on Desktop] };
+  // POST { servers, revision } → replaces the WSL side's `servers`.
+  ctx.effect(() => ws.register({
+    kind: 'exact', path: '/wsl-bridge/mcp',
+    async handler(req, res) {
+      const admission = ctx.connection.admit(req)
+      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
+      noteLanguage(req)
+      const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
+      const distro = remoteGraph?.distro ?? setup.distro ?? null
+      if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return reply({ connected: false, distro })
+      const windows = Object.keys(ctx.settings.describe({ redactSecrets: true }).find((v) => v.ns === 'mcp-manager')?.value?.servers ?? {})
+      const read = async () => (await callWslApi('settings/describe', {})).namespaces.find((v) => v.ns === 'mcp-manager')
+      try {
+        if (req.method === 'POST') {
+          const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+          if (!body.servers || typeof body.servers !== 'object' || Array.isArray(body.servers)) return reply({ error: pick({ zh: '服务器列表必须是一个对象：{ "名字": { … } }', en: 'The server list must be an object: { "name": { … } }' }) })
+          const view = await read()
+          if (!view) return reply({ error: pick({ zh: 'WSL 端没有 MCP 管理器', en: 'The WSL side has no MCP manager' }) })
+          await callWslApi('settings/replace', { ns: 'mcp-manager', section: { ...(view.user ?? {}), servers: body.servers }, ...(typeof body.revision === 'number' ? { expectedRevision: body.revision } : {}) })
+        }
+        const view = await read()
+        return reply({ connected: true, distro, available: view !== undefined, servers: view?.user?.servers ?? {}, revision: view?.revision, windows })
+      } catch (error) { return reply({ connected: true, distro, error: error.message }) }
+    },
+  }), 'wsl-mirror: WSL MCP servers route')
   ctx.effect(() => ws.register({
     kind: 'exact', path: '/wsl-bridge/plugins',
     async handler(req, res) {
@@ -367,6 +424,7 @@ export async function apply(ctx, config = {}) {
   // Each Session runs on this Host or the WSL Host (routing.mjs).
   const available = () => remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
   const routing = installSessionRouting(ctx, {
+    choices,
     bridge, remoteOrigin, cookie, forwardApi, remoteFetch, readBody, available,
     whenAvailable: (signal) => new Promise((resolve) => {
       const done = () => { if (!available() && !signal.aborted) return; availability.removeEventListener('change', done); signal.removeEventListener('abort', done); resolve() }
@@ -507,11 +565,27 @@ export async function apply(ctx, config = {}) {
       do {
         syncAgain = false
         if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return
-        const mine = ctx.settings.describe({ redactSecrets: true })
+        let mine = ctx.settings.describe({ redactSecrets: true })
         const theirs = await callSettings('describe', {})
         const changed = []
+        // This Host first: a choice it cannot use (a WSL-only preset…) is not kept here, so it uses its own default.
+        const winRoster = await choices.roster('windows')
+        let fixedHere = false
+        for (const view of mine) {
+          if (!REFERENCE_NAMESPACES.has(view.ns)) continue
+          const intended = { ...(view.user ?? {}), ...choices.reconcile(view.ns, view.user) }
+          const given = resolveSection(view.ns, intended, winRoster)
+          if (isDeepStrictEqual(given, view.user ?? {})) continue
+          await ctx.settings.replace(view.ns, given, view.revision)
+          choices.record(view.ns, intended, given)
+          changed.push({ ns: view.ns, host: 'desktop', fields: Object.keys(intended).filter((k) => !(k in given)).map((k) => `unset ${k}`) })
+          fixedHere = true
+        }
+        if (fixedHere) mine = ctx.settings.describe({ redactSecrets: true })
+        const wslRoster = await choices.roster('wsl')
         for (const { ns, desktop, wsl } of sharedNamespaces(mine, theirs.namespaces)) {
-          const ops = syncOps(desktop, wsl)
+          const want = wslSection(ns, desktop.user ?? {}, wsl.user ?? {}, choices.choice(ns), wslRoster)
+          const ops = syncOps({ ...desktop, user: want }, wsl)
           if (ops.length === 0) continue
           await callSettings('mutate', { ns, ops, expectedRevision: wsl.revision })
           changed.push({ ns, fields: ops.map((o) => `${o.op} ${o.path.join('.')}`) })
@@ -534,6 +608,7 @@ export async function apply(ctx, config = {}) {
     const method = settingsMethod(pathname)
     const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
     if (req.headers[INNER] !== undefined) return next()
+    choices.noteCookie(req.headers.cookie)
     // A Fetch route only a WSL plugin registered (DS Bot's /api/bot and its live feed): pass the request through.
     if (sameVersion && wslFetchRoute(pathname, req.method)) return forwardRequest(req, res, { origin: true })
     const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]
@@ -551,6 +626,7 @@ export async function apply(ctx, config = {}) {
         remoteNamespaces = merged.remoteNamespaces
         mine.result.value = merged.value
       }
+      if (mine?.result?.ok) mine.result.value = withChoices(mine.result.value)
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(mine))
       return
@@ -558,6 +634,30 @@ export async function apply(ctx, config = {}) {
     let ns
     try { ns = JSON.parse(body.toString('utf8'))?.payload?.args?.ns } catch {}
     if (SETTINGS_WRITES.has(method) && remoteNamespaces.has(ns)) return answer(res, await callRemoteApi(method, body))
+    if (SETTINGS_WRITES.has(method) && REFERENCE_NAMESPACES.has(ns)) {
+      // A setting naming an entry of a per-Host list: keep what the person chose, give this Host what it can use
+      // (the whole user section, replaced at the revision the page read), show the page the choice (refs.mjs).
+      let message
+      try { message = JSON.parse(body.toString('utf8')) } catch {}
+      const args = message?.payload?.args ?? {}
+      const view = ctx.settings.describe({ redactSecrets: true }).find((v) => v.ns === ns)
+      const intended = intendedSection(method, args, { ...(view?.user ?? {}), ...choices.reconcile(ns, view?.user) })
+      const section = resolveSection(ns, intended, await choices.roster('windows', req.headers.cookie))
+      const r = await fetch(`${ws.getOrigin()}/api/settings/replace`, {
+        method: 'POST',
+        headers: { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
+        body: JSON.stringify({ type: 'client-request', rpcId: message?.rpcId, method: 'settings/replace', payload: { args: { ns, section, ...(args.expectedRevision !== undefined ? { expectedRevision: args.expectedRevision } : {}) } } }),
+      })
+      const json = await r.json()
+      if (json?.result?.ok) {
+        choices.record(ns, intended, section)
+        json.result.value = overlayView(json.result.value, choices.choice(ns))
+        void syncSettings(`desktop ${method} ${ns}`)
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(json))
+      return
+    }
     req[Symbol.asyncIterator] = async function* () { yield body }  // client-connection reads the body with for-await
     const result = await next()
     if (SETTINGS_WRITES.has(method)) void syncSettings(`desktop ${method} ${ns ?? ''}`.trim())

@@ -24,7 +24,8 @@ DEEPSEEK_API_KEY=sk-demo-not-a-real-key dev/start-test-desktop.sh   # 不弹登�
 打开 `http://127.0.0.1:47102/?token=<token>`。
 
 - **运行方式**：`~/dshwsl-desk/.dsh-wsl/config.json`。写 `{"mode":"reuse"}` 是复用假 WSL 里的 dsh（跟随它的 `web` profile），`{"mode":"private"}` 是插件专用一份；删掉这个文件，切到 WSL 时会弹首次设置窗口。改完要重启测试 Desktop。
-- **直接调 WSL 端**：`HOME=~/dshwsl-fh node dev/bridge-call.mjs '[["session/list", {"_request": {}}]]'`。它读 bridge 的 STAMP 加入正在运行的 daemon，不会顶掉它；也不会在真实 HOME 下运行。
+- **直接调 WSL 端**：`HOME=~/dshwsl-fh node dev/bridge-call.mjs '[["session/list", {"_request": {}}]]'`。它照着正在运行的 daemon 记下的身份（`run/desktop-wsl/daemon.json` 里的 STAMP、`--follow` 等）加入，不会顶掉它；也不会在真实 HOME 下运行。自己写脚本用 `dev/wsl-host.mjs` 的 `connectWslHost()`。
+- **跨两边兼容扫描**：`dev/scan/run.sh`（只读：`run.sh read`），结果在 `~/dshwsl-desk/scan/`；说明见 [docs/cross-host-scan.md](../docs/cross-host-scan.md)，报告在 `dev/scan/report-*.md`。
 - **截图**：`node dev/shot.mjs <url> <输出目录> <steps.json>`（Chromium 无头浏览器，环境变量 `DARK=1`、`LOCALE`、`PRELOAD`、`FIRST_WAIT`）。`PRELOAD=dev/preload-wsl.js` 会把插件的 ctx 挂到 `window.__wslctx`，可以 `__wslctx.locale.setLocale('en')` 切语言。
 - **README 截图**：`dev/screenshots/make.sh`（见下）。
 
@@ -40,7 +41,7 @@ DEEPSEEK_API_KEY=sk-demo-not-a-real-key dev/start-test-desktop.sh   # 不弹登�
 ## 假 WSL 里现在有什么
 
 - dsh：用的是本机全局装的 `dsh`（`~/.local/bin/dsh`）。另有一份用 pnpm 装在 `~/dshwsl-fh/.local/share/dsh-cli` 的，专门测"dsh 装在项目文件夹里"的情况（设置窗口里填它的位置）。
-- profile `web`（"你自己的 dsh"）：dsh-runtime-tuning（link 到所有者本机的仓库）、dsh-pet。复用模式下 `desktop-wsl` 跟着它走。
+- profile `web`（"你自己的 dsh"）：dsh-runtime-tuning（link 到所有者本机的仓库，打开了 `tuned` 预设，扫描要用它当"只在 WSL 才有的预设"）、dsh-pet。复用模式下 `desktop-wsl` 跟着它走。
 - profile `desktop-wsl`：dsh-wsl-agent，加上只在 Desktop 中的 ds-bot、dsh-claude-style（停用）。
 - `~/dshwsl-fh/.dsh/dsh-pet/main-config.jsonc`：把桌宠设成只在页面里显示。**不设的话 dsh-pet 会在 WSL 里下载 Electron，用 WSLg 在屏幕上开一个真窗口。**
 - 演示数据：`~/projects/inventory-api`，两个任务；DS Bot 的主 Bot「Chief」。

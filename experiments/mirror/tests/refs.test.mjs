@@ -88,7 +88,12 @@ test('preset list: the chosen default is marked wherever it lives, with what the
   const theirs = [{ id: 'standard', isDefault: false }, { id: 'tuned', name: 'Tuned', description: 'd', isDefault: true }]
   const rows = mergePresets(mine, theirs, { choice: 'tuned', text })
   assert.deepEqual(rows.map((r) => [r.id, r.name, r.isDefault]), [['standard', undefined, false], ['ptc', undefined, false], ['tuned', 'Tuned · WSL', true]])
-  assert.equal(rows[2].description, 'd\nWindows: standard')
+  assert.equal(rows[2].description, 'd. Windows: standard')
+  // Chinese descriptions end with a full stop and no space; one already ending a sentence keeps its own.
+  const zh = (description) => mergePresets(mine, [{ id: 'tuned', description, isDefault: true }], { choice: 'tuned', text: { ...text, windowsUses: () => '作为默认时…' } })[2].description
+  assert.equal(zh('思考不设限'), '思考不设限。作为默认时…')
+  assert.equal(zh('思考不设限。'), '思考不设限。作为默认时…')
+  assert.equal(zh('Done.'), 'Done. 作为默认时…')
   // No choice: this Host's default; a choice only Windows has says what WSL tasks use.
   assert.deepEqual(mergePresets(mine, theirs, { text }).filter((r) => r.isDefault).map((r) => r.id), ['standard'])
   const winOnly = mergePresets(mine, [{ id: 'standard', isDefault: true }], { choice: 'ptc', text })

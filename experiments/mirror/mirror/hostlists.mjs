@@ -63,7 +63,15 @@ export function mapScheduleCwds(value, map) {
 // WSL-only entries are added and marked; the default shown is the person's choice (refs.mjs), and when only one Host
 // has it, that entry says what the other Host's tasks use instead. Texts come from the caller (language.mjs).
 
-const withNote = (description, note) => (description ? `${description}\n${note}` : note)
+// The page shows a description as one paragraph (line breaks collapse to a space), so the note follows as a sentence.
+const CJK_END = /[\u3000-\u9fff\uff00-\uffef]$/
+function withNote(description, note) {
+  const text = description?.trimEnd()
+  if (!text) return note
+  const cjk = CJK_END.test(text)
+  const stop = /[。．.!！?？]$/.test(text) ? '' : cjk ? '。' : '.'
+  return `${text}${stop}${cjk ? '' : ' '}${note}`
+}
 
 /**
  * agentPresets/list. `choice` is the default the person chose (may be undefined); `text` gives

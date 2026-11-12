@@ -76,3 +76,18 @@ test('Session control baselines and session events from WSL are prefixed', () =>
   assert.deepEqual(prefixEvent({ type: 'emit', event: 'api-session/changed', args: ['s1', 2] }).args, ['wsl:s1', 2])
   assert.deepEqual(prefixEvent({ type: 'emit', event: 'other', args: ['s1'] }).args, ['s1'])
 })
+
+test('plugin bodies: WSL Session and Workspace ids are prefixed by value, and stripped going back', async () => {
+  const { translateLoose } = await import('../mirror/ids.mjs')
+  const { eventStreamRewriter } = await import('../mirror/routes.mjs')
+  const s = 'session-3aab89ac-6225-4966-99f6-325343be682a'
+  const w = '6d235852-2c8e-400a-bf81-a18d1669841e'
+  const other = '11111111-2222-3333-4444-555555555555'
+  const value = { mainBotIds: [s], agentOf: { [s]: 'bot-1' }, workspaceId: w, botId: other, text: 'wsl: hello' }
+  const page = translateLoose(value, true, new Set([w]))
+  assert.deepEqual(page, { mainBotIds: [`wsl:${s}`], agentOf: { [`wsl:${s}`]: 'bot-1' }, workspaceId: `wsl:${w}`, botId: other, text: 'wsl: hello' })
+  assert.deepEqual(translateLoose(page, false), value)
+  const sse = eventStreamRewriter((v) => translateLoose(v, true))
+  const out = Buffer.concat([sse(Buffer.from(`event: message\ndata: {"sessionId":"${s.slice(0, 10)}`)), sse(Buffer.from(`${s.slice(10)}"}\n\n`))]).toString()
+  assert.equal(out, `event: message\ndata: {"sessionId":"wsl:${s}"}\n\n`)
+})

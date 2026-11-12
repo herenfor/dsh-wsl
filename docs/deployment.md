@@ -122,6 +122,7 @@
 两类问题都是通用的，不针对某个插件：
 
 - **插件自定义的 `/api` 接口**：插件用 `ctx.connection.fetch.register` 加的接口（ds-bot 的 `/api/bot` 和实时推送）原来在 Desktop 页面上是 404。WSL 端 agent 现在上报 WSL Host 的这类路由和方法，Desktop 在本机没有同名路由时整条转发（`wslFetchRoute` → `forwardRequest`）。
+- **插件接口里的会话 ID**：插件页面和它的 WSL 后台用自己的格式传数据（ds-bot 的 `mainBotIds`、按会话 ID 作键的表），字段名没法列举。转发插件接口时按值改写：WSL 返回的 `session-<uuid>` 和 WSL 工作区 ID 加上 `wsl:`（对象的键也改），页面发过去的 `wsl:` ID 去掉前缀，JSON 请求/响应、查询参数和事件流（`data:` 行）都处理（`translateLoose`、`eventStreamRewriter`）。没有这一步时，ds-bot 拿到的 Chief 会话 ID 在页面上不存在，主区域停在 Windows 的默认会话，消息发到了 Windows 端。
 - **插件补丁关掉的官方组件**：插件的 `cordis.patch.yml` 可以写 `{ id: <条目>, disabled: true }` 关掉官方条目（ds-bot 关掉 `ui-settings-general`，好占用设置入口 `settings.trigger`）。补丁只作用在 WSL Host 的组合上，Desktop 页面里官方组件还在，单例位置被占，插件的 `apply` 抛异常、整个插件不启动（页面只报 “1 entry did not activate”）。现在 agent 读出 WSL 上已启用的第三方插件补丁里关掉的条目，用 WSL 加载器把条目 id 换成包名上报，Desktop 合并模块图时把这些官方模块从页面去掉（`mergeGraphs` 的 `dropped`，写进 `mirror-status.json`）。只影响页面模块，Desktop 后台不动；补丁里改官方条目配置（非 disabled）的情况还没处理。
 
 排查方法：生产页面里 cordis 不把插件 `apply` 的异常打到控制台。用 CDP 的 `Page.addScriptToEvaluateOnNewDocument` 在页面脚本前给 `__ModuleLoader__.load` 挂 setter，包住目标模块的 `apply` 打印异常。

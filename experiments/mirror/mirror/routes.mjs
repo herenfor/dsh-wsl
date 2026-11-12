@@ -24,3 +24,24 @@ export function routesToForward(remote, local) {
 export const FORWARD_REQUEST_HEADERS = ['accept', 'accept-language', 'content-type', 'cache-control', 'if-none-match', 'if-modified-since', 'last-event-id', 'range']
 // Response headers passed back; set-cookie is dropped so the WSL Host's cookie never reaches the page.
 export const DROP_RESPONSE_HEADERS = new Set(['set-cookie', 'connection', 'keep-alive', 'transfer-encoding', 'content-encoding', 'content-length'])
+
+export const isJson = (type) => typeof type === 'string' && /^application\/(?:[\w.+-]*\+)?json\b/i.test(type.trim())
+
+/**
+ * A chunk rewriter for a Server-Sent Events body: each `data:` line holding JSON goes through `map`. Lines are cut at
+ * line ends, so a partial line waits for the next chunk.
+ */
+export function eventStreamRewriter(map) {
+  const decoder = new TextDecoder()
+  let pending = ''
+  return (chunk) => {
+    pending += decoder.decode(chunk, { stream: true })
+    const end = pending.lastIndexOf('\n')
+    if (end < 0) return Buffer.alloc(0)
+    const lines = pending.slice(0, end + 1)
+    pending = pending.slice(end + 1)
+    return Buffer.from(lines.replace(/^data:( ?)(.*)$/gm, (line, space, data) => {
+      try { return `data:${space}${JSON.stringify(map(JSON.parse(data)))}` } catch { return line }
+    }))
+  }
+}

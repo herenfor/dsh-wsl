@@ -62,3 +62,28 @@ export function routeOf(payload, endpoint = '') {
   if (wsl === items.length) return 'wsl'
   throw Object.assign(new Error('This action mixes a Windows session or folder with a WSL one.'), { code: 'wsl/mixed-hosts' })
 }
+
+// Plugins installed only in WSL talk to their own Host part over Fetch routes with bodies of their own shape, so the
+// identities in them are found by value, not by field: a Session id has a fixed form, a Workspace id is one the WSL
+// Host lists. Map keys count as values (a plugin may index by Session).
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const SESSION_ID = new RegExp(`^session-${UUID}$`)
+const PAGE_ID = new RegExp(`^${PREFIX}(?:session-)?${UUID}$`)
+
+/** `incoming` (WSL Host → page) prefixes WSL Session ids and the given WSL Workspace ids; outgoing strips the prefix. */
+export function translateLoose(value, incoming, workspaceIds = new Set()) {
+  const one = (text) => incoming
+    ? (SESSION_ID.test(text) || workspaceIds.has(text) ? toPage(text) : text)
+    : (PAGE_ID.test(text) ? toWsl(text) : text)
+  const walk = (item) => {
+    if (typeof item === 'string') return one(item)
+    if (Array.isArray(item)) return item.map(walk)
+    if (item && typeof item === 'object' && !ArrayBuffer.isView(item)) {
+      const out = {}
+      for (const [name, child] of Object.entries(item)) out[one(name)] = walk(child)
+      return out
+    }
+    return item
+  }
+  return walk(value)
+}

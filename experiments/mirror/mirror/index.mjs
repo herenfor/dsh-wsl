@@ -13,11 +13,12 @@ import { isDeepStrictEqual } from 'node:util'
 import { Readable } from 'node:stream'
 import { startBridge } from './transport/client.mjs'
 import { mergeGraphs, requestedPackages, compatibleReleases } from './merge.mjs'
-import { DROP_RESPONSE_HEADERS, FORWARD_REQUEST_HEADERS, routesToForward } from './routes.mjs'
+import { DROP_RESPONSE_HEADERS, eventStreamRewriter, FORWARD_REQUEST_HEADERS, isJson, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
 import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
 import { toWindowsSpec, toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
+import { translateLoose } from './ids.mjs'
 import { check as checkWsl, compareVersions } from './setup.mjs'
 import { installSelfUpdate } from './selfupdate.mjs'
 
@@ -162,11 +163,33 @@ export async function apply(ctx, config = {}) {
       const headers = { cookie: await cookie(), ...(origin ? { origin: remoteOrigin() } : {}) }
       for (const name of FORWARD_REQUEST_HEADERS) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name]
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
-      const upstream = await remoteFetch(req.url, { method: req.method, headers, signal: abort.signal, ...(hasBody ? { body: req } : {}) })
+      // A plugin's own route names Sessions and Workspaces in its own shapes: JSON bodies, event streams and the
+      // query are rewritten by value so the page sees `wsl:` ids and the WSL Host its own.
+      const url = new URL(req.url, 'http://x')
+      for (const [name, value] of [...url.searchParams]) url.searchParams.set(name, translateLoose(value, false))
+      let body = hasBody ? req : undefined
+      if (hasBody && isJson(req.headers['content-type'])) {
+        const raw = await readBody(req)
+        try { body = Buffer.from(JSON.stringify(translateLoose(JSON.parse(raw.toString('utf8')), false))) } catch { body = raw }
+        delete headers['content-length']
+      }
+      const upstream = await remoteFetch(`${url.pathname}${url.search}`, { method: req.method, headers, signal: abort.signal, ...(body !== undefined ? { body } : {}) })
       const out = {}
       for (const [name, value] of upstream.headers) if (!DROP_RESPONSE_HEADERS.has(name)) out[name] = value
+      const type = upstream.headers.get('content-type') ?? ''
+      const ids = routing?.wslWorkspaceIds?.() ?? new Set()
+      if (isJson(type) && upstream.body) {
+        const text = await upstream.text()
+        let rewritten = text
+        try { rewritten = JSON.stringify(translateLoose(JSON.parse(text), true, ids)) } catch {}
+        delete out['content-length']
+        res.writeHead(upstream.status, out)
+        res.end(rewritten)
+        return
+      }
       res.writeHead(upstream.status, out)
-      if (upstream.body) for await (const chunk of upstream.body) { if (!res.write(chunk)) await new Promise((r) => res.once('drain', r)) }
+      const sse = type.startsWith('text/event-stream') ? eventStreamRewriter((value) => translateLoose(value, true, ids)) : undefined
+      if (upstream.body) for await (const chunk of upstream.body) { if (!res.write(sse ? sse(chunk) : chunk)) await new Promise((r) => res.once('drain', r)) }
       res.end()
     } catch (error) {
       if (abort.signal.aborted) return

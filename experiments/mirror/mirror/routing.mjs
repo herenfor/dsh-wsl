@@ -470,7 +470,9 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     else if (frame.event === 'cordis/inspect-query-resolved' || frame.event === 'cordis/request-run-resolved') wslCordis.requests.delete(id)
   }
 
-  return { call }
+  // Raw ids of the WSL Host's Workspaces, for plugin bodies that name them.
+  const wslWorkspaceIds = () => new Set((wslWorkspaces?.items ?? []).map((w) => toWsl(w.workspaceId)))
+  return { call, wslWorkspaceIds }
 }
 
 /** Both Hosts' modes: this Host's as they are, then the WSL Host's that this one lacks, marked. */

@@ -92,35 +92,7 @@ test('settings: WSL-only namespaces are added after this Host\'s own; shared one
   assert.equal(settingsMethod('/api/session/list'), undefined)
 })
 
-import { mergeBundles, mergeInventory, mergePlugins, prefixResult, stripPrefix } from '../mirror/plugins.mjs'
-
-test('plugins: an official bundle both sides ship is one row telling both states; other bundles are listed per side', () => {
-  const local = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: true }, { name: 'dsh-wsl-mirror', official: false, enabled: true }]
-  const remote = [{ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled: false }, { name: 'dsh-runtime-tuning', official: false, rows: [{ rowId: 'r', entryId: 'include:r' }] }]
-  const b = mergeBundles(local, remote)
-  assert.deepEqual(b.map((x) => `${x.name}|${JSON.stringify(x.meta.title)}|${x.enabled ?? ''}`), [
-    '@deepseek-ai/dsh-x|{"en":"X · Windows only","zh":"某功能 · 仅 Windows 启用"}|true',
-    'dsh-wsl-mirror|"dsh-wsl-mirror · Windows"|true',
-    'wsl:dsh-runtime-tuning|"dsh-runtime-tuning · WSL"|',
-  ])
-  assert.equal(b[2].rows[0].entryId, 'wsl:include:r')
-  assert.deepEqual(mergeBundles(local, undefined).map((x) => x.name), ['@deepseek-ai/dsh-x', 'dsh-wsl-mirror'])
-  assert.deepEqual(mergePlugins([{ entryId: 'a', patchId: 'a' }], [{ entryId: 'include:p', patchId: 'p' }, { entryId: 'x', readOnlyReason: 'r' }]).map((p) => `${p.entryId}/${p.patchId ?? '-'}`), ['a/a', 'wsl:include:p/wsl:p', 'wsl:x/-'])
-  const inv = mergeInventory({ entries: [{ entryId: 'a' }], agentPresets: [1], managementAvailable: true }, { entries: [{ entryId: 'b' }], agentPresets: [2] })
-  assert.deepEqual(inv, { entries: [{ entryId: 'a' }, { entryId: 'wsl:b' }], agentPresets: [1], managementAvailable: true })
-})
-
-test('plugins: a prefixed argument sends the call to WSL without the prefix, and its result gets the prefix back', () => {
-  assert.deepEqual(stripPrefix({ args: { name: 'wsl:dsh-runtime-tuning', enabled: false } }), { value: { args: { name: 'dsh-runtime-tuning', enabled: false } }, wsl: true })
-  assert.deepEqual(stripPrefix({ args: { name: 'dsh-x' } }), { value: { args: { name: 'dsh-x' } }, wsl: false })
-  assert.deepEqual(prefixResult({ changed: true, target: 'dsh-x', bundle: 'dsh-x', stage: 'enable' }), { changed: true, target: 'wsl:dsh-x', bundle: 'wsl:dsh-x', stage: 'enable' })
-})
-
-test('plugins: a localized title is labelled in every language', () => {
-  const [b] = mergeBundles([], [{ name: 'x', meta: { title: { en: 'Auto review', zh: '自动审查' }, description: { en: 'd' } } }])
-  assert.deepEqual(b.meta, { title: { en: 'Auto review · WSL', zh: '自动审查 · WSL' }, description: { en: 'd' } })
-})
-
+import { wslBundles } from '../mirror/plugins.mjs'
 import { toWindowsSpec, toWslSpec } from '../mirror/paths.mjs'
 
 test('local-directory specs are converted between Windows and WSL', () => {
@@ -150,8 +122,14 @@ test('settings sync: Desktop values are copied field by field; secrets and machi
   assert.deepEqual(shared.map((s) => s.ns), ['locale'])
 })
 
-test('plugins: an official bundle on in both sides or off in both keeps its own title', () => {
-  const row = (enabled) => ({ name: '@deepseek-ai/dsh-x', official: true, meta: { title: { en: 'X', zh: '某功能' } }, enabled })
-  for (const on of [true, false]) assert.deepEqual(mergeBundles([row(on)], [row(on)])[0].meta.title, { en: 'X', zh: '某功能' })
-  assert.equal(mergeBundles([row(false)], [row(true)])[0].meta.title.zh, '某功能 · 仅 WSL 启用')
+
+test('WSL tab: official optional and installed bundles, mine first; base and internal bundles left out', () => {
+  const rows = wslBundles([
+    { name: '@deepseek-ai/dsh-base', official: false, installed: false, enabled: true },
+    { name: 'dsh-wsl-agent', official: false, installed: true, enabled: true },
+    { name: '@deepseek-ai/dsh-x', official: true, installed: false, enabled: false, meta: { title: { en: 'X', zh: '某功能' } } },
+    { name: 'ds-bot', official: false, installed: true, enabled: true, version: '0.3.5', description: 'Bots' },
+  ])
+  assert.deepEqual(rows.map((r) => `${r.name}|${r.title.zh}|${r.enabled}`), ['ds-bot|ds-bot|true', '@deepseek-ai/dsh-x|某功能|false'])
+  assert.equal(rows[0].description.en, 'Bots')
 })

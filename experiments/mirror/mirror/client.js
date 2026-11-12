@@ -1,6 +1,5 @@
 // Browser half of the mirror:
-// - an item in the Plugins page's Add plugin menu that shows where "Install a third-party plugin" installs (WSL or
-//   Windows) and switches it, and the WSL switch on official bundles' detail pages;
+// - a WSL tab on the Plugins page for the WSL side's plugins (the official Installed tab stays Windows');
 // - a penguin after the title of WSL folders and Sessions in the sidebar;
 // - the run location of new tasks on the new-task page.
 window.__ModuleLoader__.load({
@@ -8,61 +7,6 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react')
     const h = React.createElement
-    const url = () => new URL('wsl-bridge/install-target', window.document.baseURI)
-    const COLORS = { wsl: '#e95420', local: '#0078d4' }
-
-    function InstallTarget() {
-      const [state, setState] = React.useState(null)
-      const load = (body) => window.fetch(url(), {
-        method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
-        ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
-      }).then((r) => r.json()).then(setState, () => setState({ error: true }))
-      React.useEffect(() => { void load() }, [])
-      if (state === null || state.error) return null
-      const wsl = state.target === 'wsl'
-      const where = wsl ? `WSL${state.distro ? `（${state.distro}）` : ''}` : 'Windows（本机）'
-      const hint = wsl && !state.wslAvailable
-        ? 'WSL 端未连接或版本不同：这时安装会直接报错，不会改装到 Windows'
-        : `"安装第三方插件"会装到这里。点击切换到 ${wsl ? 'Windows' : 'WSL'}`
-      return h('button', {
-        type: 'button', role: 'menuitem',
-        onClick: (event) => { event.preventDefault(); event.stopPropagation(); void load({ target: wsl ? 'local' : 'wsl' }) },
-        style: {
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', boxSizing: 'border-box',
-          padding: '8px 12px', margin: '4px 0 0', border: 'none', borderLeft: `3px solid ${COLORS[state.target]}`,
-          borderRadius: 6, background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer',
-        },
-      },
-      h('span', { style: { fontSize: 13, fontWeight: 600 } }, `安装位置：${where}`),
-      h('span', { style: { fontSize: 12, opacity: 0.7, maxWidth: 280 } }, hint))
-    }
-
-    // On an official bundle's detail page: the WSL side's state and switch (the page's own switch is this Host's).
-    function WslSwitch({ subject }) {
-      const name = subject?.kind === 'bundle' && subject.pkg?.official && !subject.pkg.name.startsWith('wsl:') ? subject.pkg.name : undefined
-      const [state, setState] = React.useState(null)
-      const [busy, setBusy] = React.useState(false)
-      const call = (body) => window.fetch(new URL(`wsl-bridge/bundle?name=${encodeURIComponent(name)}`, window.document.baseURI), {
-        method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
-        ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
-      }).then((r) => r.json()).then(setState, (e) => setState({ connected: true, error: String(e) }))
-      React.useEffect(() => { if (name) void call() }, [name])
-      if (!name || state === null) return null
-      let text, action
-      if (!state.connected) text = 'WSL：未连接'
-      else if (state.error) text = `WSL：读取失败（${state.error}）`
-      else if (!state.bundle) text = 'WSL：没有这个插件'
-      else {
-        const on = state.bundle.enabled
-        text = `WSL：${on ? '已启用' : '未启用'}${state.result?.application === 'restart-required' ? '（WSL 端需要重启才生效）' : ''}`
-        action = h('button', {
-          type: 'button', disabled: busy,
-          onClick: async () => { setBusy(true); try { await call({ name, enabled: !on }) } finally { setBusy(false) } },
-          style: { marginLeft: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.wsl}`, background: on ? 'transparent' : COLORS.wsl, color: on ? COLORS.wsl : '#fff', cursor: busy ? 'default' : 'pointer', font: 'inherit', fontSize: 12 },
-        }, busy ? '处理中…' : on ? '在 WSL 停用' : '在 WSL 启用')
-      }
-      return h('span', { style: { display: 'inline-flex', alignItems: 'center', fontSize: 12, paddingLeft: 8, borderLeft: `3px solid ${COLORS.wsl}` } }, h('span', null, text), action)
-    }
 
     // Tux, drawn small for row titles.
     const PENGUIN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><ellipse cx="8" cy="8.8" rx="5" ry="6.2" fill="#1f1f1f" stroke="#8a8a8a" stroke-width=".5"/><ellipse cx="8" cy="10.4" rx="3.3" ry="4.1" fill="#fafafa"/><circle cx="6.6" cy="5.3" r="1.05" fill="#fafafa"/><circle cx="9.4" cy="5.3" r="1.05" fill="#fafafa"/><circle cx="6.8" cy="5.5" r=".5" fill="#1f1f1f"/><circle cx="9.2" cy="5.5" r=".5" fill="#1f1f1f"/><path d="M6.5 6.7h3L8 8.2z" fill="#f5a623"/><ellipse cx="5.5" cy="14.9" rx="2.1" ry=".95" fill="#f5a623"/><ellipse cx="10.5" cy="14.9" rx="2.1" ry=".95" fill="#f5a623"/></svg>'
@@ -481,6 +425,85 @@ window.__ModuleLoader__.load({
       }, failed ? h(PenguinIcon) : h(Spinner), wide ? h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, text) : null), modal)
     }
 
+    // ---- the WSL tab of the Plugins page: the WSL side's plugins, apart from the official Installed tab (Windows').
+    const ERROR = 'var(--dsw-alias-state-error-primary, #e5484d)'
+    const OK = 'var(--dsw-alias-state-success-primary, #30a46c)'
+    const pageText = (v) => (document.documentElement.lang?.startsWith('zh') === false ? v?.en : v?.zh) ?? v?.zh ?? ''
+    const AFTER = { 'restart-required': '需要重启才生效：完全退出 Desktop，等 5 秒以上再打开', failed: '失败', overridden: '被配置覆盖，没有生效', cancelled: '已取消' }
+    function Toggle({ on, busy, onChange }) {
+      return h('button', {
+        type: 'button', role: 'switch', 'aria-checked': on, disabled: busy, onClick: () => onChange(!on),
+        style: { position: 'relative', width: 36, height: 20, flex: 'none', border: 0, borderRadius: 10, padding: 0, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, background: on ? 'var(--dsw-alias-accent-primary, #4c7cf3)' : 'var(--dsw-alias-fill-secondary, rgba(127,127,127,.35))', transition: 'background .15s' },
+      }, h('span', { style: { position: 'absolute', top: 2, left: on ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .15s' } }))
+    }
+    function WslPluginsTab() {
+      const [state, setState] = React.useState(null)
+      const [busy, setBusy] = React.useState(null)       // name of the bundle being changed, or 'install'
+      const [note, setNote] = React.useState(null)       // { text, error }
+      const [spec, setSpec] = React.useState('')
+      const [checked, setChecked] = React.useState(null) // inspect result for `spec`
+      const load = () => api('wsl-bridge/plugins').then(setState, (e) => setState({ connected: false, error: String(e) }))
+      React.useEffect(() => { void load() }, [])
+      const act = async (body, key, done) => {
+        setBusy(key); setNote(null)
+        try {
+          const r = await api('wsl-bridge/plugins', body)
+          if (r.error) setNote({ text: r.error, error: true })
+          else done?.(r.result)
+        } catch (e) { setNote({ text: String(e), error: true }) } finally { setBusy(null); void load() }
+      }
+      const outcome = (what) => (result) => {
+        const app = result?.application
+        if (result?.error) setNote({ text: `${what}失败：${result.error.message ?? result.error.code}`, error: true })
+        else setNote({ text: app && app !== 'applied' ? `${what}：${AFTER[app] ?? app}` : `${what}：已生效`, error: app === 'failed' })
+      }
+      const distro = state?.distro ? `WSL（${state.distro}）` : 'WSL'
+      const intro = h('p', { style: { margin: '0 0 16px', fontSize: 13, color: MUTED, lineHeight: 1.6 } },
+        `这里是装在 ${distro} 里的插件，只对在 WSL 中运行的任务生效。Windows 的插件在「已安装」页管理，两边互不影响。`)
+      if (state === null) return h('div', { style: { padding: 24, color: FAINT, fontSize: 13 } }, '加载中…')
+      if (!state.connected) {
+        return h('div', { style: { padding: '8px 4px' } }, intro, h('p', { style: { fontSize: 13, color: FAINT } },
+          `${distro} 端${SETUP_NOTE[state.setup] ? `：${SETUP_NOTE[state.setup]}` : '还没有连接'}。连上后这里会列出它的插件。`),
+        h('button', { type: 'button', onClick: () => void load(), style: { marginTop: 8, padding: '6px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 13, cursor: 'pointer' } }, '重新检查'))
+      }
+      const button = (label, onClick, { primary = false, disabled = false, danger = false } = {}) => h('button', {
+        type: 'button', onClick, disabled,
+        style: { padding: '6px 12px', borderRadius: 8, border: primary ? 0 : `1px solid ${BORDER}`, background: primary ? 'var(--dsw-alias-accent-primary, #4c7cf3)' : 'transparent', color: primary ? '#fff' : danger ? ERROR : 'inherit', font: 'inherit', fontSize: 13, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' },
+      }, label)
+      const row = (b) => h('div', { key: b.name, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)' } },
+        b.icon ? h('img', { src: b.icon, alt: '', style: { width: 32, height: 32, flex: 'none', borderRadius: 8 } }) : h('span', { style: { width: 32, height: 32, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, h(PenguinIcon)),
+        h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 } },
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 } },
+            h('span', { style: { fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, pageText(b.title)),
+            b.version ? h('span', { style: { fontSize: 12, color: FAINT } }, b.version) : null),
+          h('span', { style: { fontSize: 12, color: b.error ? ERROR : MUTED, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, b.error ?? (pageText(b.description) || b.name))),
+        !b.official && b.installed ? button('卸载', () => { if (window.confirm(`从 ${distro} 卸载 ${pageText(b.title)}？`)) void act({ action: 'remove', name: b.name }, b.name, outcome(`卸载 ${pageText(b.title)}`)) }, { danger: true, disabled: busy !== null }) : null,
+        h(Toggle, { on: b.enabled, busy: busy !== null, onChange: (on) => void act({ action: on ? 'enable' : 'disable', name: b.name }, b.name, outcome(`${on ? '启用' : '停用'} ${pageText(b.title)}`)) }))
+      const mine = state.bundles.filter((b) => !b.official)
+      const official = state.bundles.filter((b) => b.official)
+      const section = (title, items, empty) => h('section', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 } },
+        h('h3', { style: { margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: MUTED } }, title),
+        items.length ? items.map(row) : h('div', { style: { fontSize: 13, color: FAINT } }, empty))
+      const inspected = checked?.status === 'accepted' ? checked : null
+      const install = h('section', { style: { display: 'flex', flexDirection: 'column', gap: 8, padding: 14, marginBottom: 20, border: `1px solid ${BORDER}`, borderRadius: 'var(--dsw-radius-lg, 12px)' } },
+        h('div', { style: { fontSize: 14, fontWeight: 600 } }, `安装插件到 ${distro}`),
+        h('div', { style: { display: 'flex', gap: 8 } },
+          h('input', { value: spec, placeholder: 'npm 包名、git 地址或本地文件夹路径', onChange: (e) => { setSpec(e.target.value); setChecked(null) },
+            onKeyDown: (e) => { if (e.key === 'Enter' && spec.trim()) void act({ action: 'inspect', spec: spec.trim() }, 'install', setChecked) },
+            style: { flex: 1, minWidth: 0, padding: '6px 10px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 13 } }),
+          inspected
+            ? button(busy === 'install' ? '安装中…' : '安装', () => void act({ action: 'install', spec: spec.trim() }, 'install', (r) => { outcome(`安装 ${inspected.name ?? spec.trim()}`)(r); if (!r?.error && r?.application !== 'failed') { setSpec(''); setChecked(null) } }), { primary: true, disabled: busy !== null })
+            : button(busy === 'install' ? '检查中…' : '检查', () => void act({ action: 'inspect', spec: spec.trim() }, 'install', setChecked), { disabled: busy !== null || !spec.trim() })),
+        checked?.status === 'refused' ? h('div', { style: { fontSize: 12, color: ERROR } }, checked.reason) : null,
+        inspected ? h('div', { style: { fontSize: 12, color: MUTED } }, `${inspected.name ?? spec.trim()}${inspected.version ? ` ${inspected.version}` : ''}${inspected.description ? ` — ${inspected.description}` : ''}${inspected.bundle === false ? '（这个包不是 DSH 插件）' : ''}`) : null,
+        busy === 'install' && inspected ? h('div', { style: { fontSize: 12, color: FAINT } }, '正在 WSL 中下载和安装，可能需要一两分钟…') : null)
+      return h('div', { style: { padding: '8px 4px', maxWidth: 820 } }, intro,
+        note ? h('div', { role: 'status', style: { marginBottom: 12, fontSize: 13, color: note.error ? ERROR : OK } }, note.text) : null,
+        install,
+        section('我安装的', mine, '还没有安装第三方插件'),
+        section('官方插件', official, '没有可选的官方插件'))
+    }
+
     return {
       name: 'dsh-wsl-mirror-browser',
       inject: ['slots'],
@@ -506,8 +529,10 @@ window.__ModuleLoader__.load({
             yield c.slots.register({ name: 'sidebar.workspaces.directoryFlow', priority: -1, inject: injected }, FolderFlow)
           })), 'wsl-mirror: Windows or WSL folder when adding one')
         })
-        ctx.effect(() => ctx.slots.inject('plugins.add.actions', () => ctx.slots.register({ name: 'plugins.add.actions', id: 'wsl-install-target' }, InstallTarget)), 'wsl-mirror: install target item')
-        ctx.effect(() => ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({ name: 'plugins.detail.actions', id: 'wsl-bundle-switch' }, WslSwitch)), 'wsl-mirror: WSL switch on detail pages')
+        // The tab is named after the distribution the WSL side runs in, once known.
+        let tabLabel = 'WSL'
+        api('wsl-bridge/setup').then((s) => { if (s?.distro) tabLabel = `WSL（${s.distro}）` }, () => {})
+        ctx.effect(() => ctx.slots.inject('plugins.tab', () => ctx.slots.register({ name: 'plugins.tab', id: 'wsl-plugins', label: () => tabLabel, order: 50 }, WslPluginsTab)), 'wsl-mirror: WSL tab on the Plugins page')
       },
     }
   },

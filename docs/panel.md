@@ -77,6 +77,19 @@ mirror 在 `connection/request` 钩子里加了一个"管理位置"开关（`/ws
 
 
 
+## 当前做法：Windows 和 WSL 分开管理（2026-11-12）
+
+以下各节记录的是之前的做法：把两边的插件合并进官方「已安装」页，加标题标注、安装位置菜单项和详情页 WSL 开关。用户试用后认为太乱，已全部撤掉，改成两边分开：
+
+- 官方「已安装」页不再改动：只列 Windows 端的插件，标题、开关、安装对话框都是官方原样。`pluginManager/*` 和 `pluginInventory/*` 调用不再经过 mirror。
+- 插件页加一个独立的标签页「WSL（发行版名）」（官方插槽 `plugins.tab`，和「发现」同一种方式），发行版名取实际检测到的，不写死 Ubuntu。内容由 `client.js` 的 `WslPluginsTab` 自己画：
+  - 顶部说明：这里的插件只对在 WSL 中运行的任务生效，Windows 的插件在「已安装」页管理；
+  - 安装框：输入 npm 包名、git 地址或本地路径，先"检查"（WSL 端 `inspect`，Windows 路径换成 WSL 路径），再"安装"（`installBundle`，装好即启用）；
+  - 「我安装的」：第三方插件，可开关、可卸载；「官方插件」：官方可选插件，可开关。WSL 端必需的 `dsh-wsl-agent` 和 profile 的基础插件不列出；
+  - 操作结果写在列表上方；需要重启的写明"完全退出 Desktop，等 5 秒以上再打开"。
+- 接口：`/wsl-bridge/plugins`，GET 返回 `{connected, distro, bundles}`（`plugins.mjs` 的 `wslBundles` 选出和整理），POST `{action: enable|disable|remove|inspect|install, name|spec}` 转给 WSL 端的 `pluginManager`。
+- 验证（测试环境）：「已安装」页 25 个插件，没有 `wsl:` 行、没有标注；WSL 标签页列出 ds-bot、Claude Code 风格和官方可选插件；经这个接口停用 ds-bot 后 WSL 端生效（`applied`）。
+
 ## 安装位置（2026-11-11，已实现并在 WSL 内验证）
 
 官方"添加插件"下拉菜单有两项："安装第三方插件"（一个输入框，支持 npm 包名、GitHub 仓库地址、本地目录路径三种形式，另有注册表选择）和"让 agent 创建插件"（Creator 模式）。下拉菜单里的额外项来自官方插槽 `plugins.add.actions`。

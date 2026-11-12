@@ -15,8 +15,8 @@ import { startBridge } from './transport/client.mjs'
 import { mergeGraphs, requestedPackages, compatibleReleases } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, eventStreamRewriter, FORWARD_REQUEST_HEADERS, isJson, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
-import { LIST_METHODS, mergeList, PLUGIN_NAMESPACES, prefixResult, stripPrefix } from './plugins.mjs'
-import { toWindowsSpec, toWslSpec } from './paths.mjs'
+import { wslBundles } from './plugins.mjs'
+import { toWslSpec } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { translateLoose } from './ids.mjs'
 import { check as checkWsl, compareVersions } from './setup.mjs'
@@ -223,104 +223,39 @@ export async function apply(ctx, config = {}) {
     res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
     res.end(Buffer.from(await upstream.arrayBuffer()))
   }
-  // The official Plugins page over both Hosts (see plugins.mjs). Installs started on the WSL Host are remembered by
-  // request id, so waiting for or cancelling them goes there too.
-  const wslInstalls = new Set()
-  // Where the official "Install a third-party plugin" dialog installs: 'wsl' (default) or 'local'. Shown and switched by
-  // this package's item in the Add plugin menu; GET/POST /wsl-bridge/install-target {"target": "wsl" | "local"}.
-  let installTarget = 'wsl'
-  const INSTALL_ENDPOINTS = new Set(['pluginManager/inspect', 'pluginManager/installBundle'])
-  ctx.effect(() => ws.register({
-    kind: 'exact', path: '/wsl-bridge/install-target',
-    async handler(req, res) {
-      const admission = ctx.connection.admit(req)
-      if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
-      if (req.method === 'POST') {
-        try { const t = JSON.parse((await readBody(req)).toString('utf8')).target; if (t === 'wsl' || t === 'local') installTarget = t } catch {}
-      }
-      const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ target: installTarget, wslAvailable: sameVersion, distro: remoteGraph?.distro ?? setup.distro ?? null, setup: publicSetup().state }))
-    },
-  }), 'wsl-mirror: install target route')
-  // The WSL side of one official bundle, for the switch on its detail page: GET ?name= reads it, POST {name, enabled}
-  // switches it. Answers {connected, bundle?, result?}.
+  // The WSL tab of the Plugins page (client.js): the WSL Host's bundles, switched, removed and installed there. The
+  // official Installed tab stays this Host's own. GET → {connected, distro, bundles}; POST {action, name | spec}.
   const callWsl = async (method, args) => {
     const r = await forwardApi(`/api/pluginManager/${method}`, Buffer.from(JSON.stringify({ type: 'client-request', rpcId: 'mirror', method: `pluginManager/${method}`, payload: { args } })))
     const json = await r.json()
-    if (!json?.result?.ok) throw new Error(json?.result?.error?.message ?? `HTTP ${r.status}`)
+    if (!json?.result?.ok) throw Object.assign(new Error(json?.result?.error?.message ?? `HTTP ${r.status}`), { code: json?.result?.error?.code })
     return json.result.value
   }
   ctx.effect(() => ws.register({
-    kind: 'exact', path: '/wsl-bridge/bundle',
+    kind: 'exact', path: '/wsl-bridge/plugins',
     async handler(req, res) {
       const admission = ctx.connection.admit(req)
       if ('rejection' in admission) { res.writeHead(admission.rejection); res.end(); return }
       const reply = (value) => { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
-      const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
-      if (!sameVersion) return reply({ connected: false })
+      const distro = remoteGraph?.distro ?? setup.distro ?? null
+      if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return reply({ connected: false, distro, setup: publicSetup().state })
       try {
-        let result
-        let name = new URL(req.url, 'http://x').searchParams.get('name')
         if (req.method === 'POST') {
           const body = JSON.parse((await readBody(req)).toString('utf8'))
-          name = body.name
-          result = await callWsl('setBundleEnabled', { name, enabled: body.enabled === true })
+          const call = {
+            enable: () => callWsl('setBundleEnabled', { name: body.name, enabled: true }),
+            disable: () => callWsl('setBundleEnabled', { name: body.name, enabled: false }),
+            remove: () => callWsl('removeBundle', { name: body.name }),
+            inspect: () => callWsl('inspect', { spec: toWslSpec(String(body.spec ?? '')) }),
+            install: () => callWsl('installBundle', { spec: toWslSpec(String(body.spec ?? '')), options: { enabled: true } }),
+          }[body.action]
+          if (call === undefined) return reply({ connected: true, distro, error: `unknown action ${body.action}` })
+          return reply({ connected: true, distro, result: await call() })
         }
-        const bundle = (await callWsl('listBundles', {})).find((b) => b.name === name)
-        reply({ connected: true, bundle: bundle && { name: bundle.name, enabled: bundle.enabled, installed: bundle.installed, availability: bundle.availability }, result })
-      } catch (error) { reply({ connected: true, error: error.message }) }
+        reply({ connected: true, distro, bundles: wslBundles(await callWsl('listBundles', {})) })
+      } catch (error) { reply({ connected: true, distro, error: error.message, code: error.code }) }
     },
-  }), 'wsl-mirror: bundle route')
-  const withSpec = (payload, convert) => {
-    const args = payload?.args
-    return typeof args?.spec === 'string' ? { ...payload, args: { ...args, spec: convert(args.spec) } } : payload
-  }
-  const ownHost = (req, body) => fetch(`${ws.getOrigin()}${new URL(req.url, 'http://x').pathname}`, {
-    method: 'POST', body,
-    headers: { cookie: req.headers.cookie ?? '', origin: ws.getOrigin(), 'content-type': 'application/json', [INNER]: '1' },
-  }).then((r) => r.json())
-  async function alsoOnWsl(args) {
-    if (typeof args?.name !== 'string' || typeof args.enabled !== 'boolean') return
-    if (remoteGraph === undefined || !compatibleReleases(raw.release, remoteGraph.graph.release)) return
-    try {
-      const twin = (await callWsl('listBundles', {})).find((b) => b.name === args.name)
-      if (twin === undefined || !(twin.official || args.name.startsWith('@deepseek-ai/')) || twin.enabled === args.enabled) return
-      await callWsl('setBundleEnabled', { name: args.name, enabled: args.enabled })
-    } catch (error) { ctx.logger.warn('wsl-mirror: switching %s on the WSL side failed: %s', args.name, error.message) }
-  }
-  async function pluginCall(req, res, next, pathname, endpoint) {
-    const body = await readBody(req)
-    const json = (value) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
-    if (LIST_METHODS.has(endpoint)) {
-      const [mine, theirs] = await Promise.all([ownHost(req, body), forwardApi(pathname, body).then((r) => r.json()).catch(() => undefined)])
-      if (mine?.result?.ok) mine.result.value = mergeList(endpoint, mine.result.value, theirs?.result?.ok ? theirs.result.value : undefined)
-      return json(mine)
-    }
-    let message
-    try { message = JSON.parse(body.toString('utf8')) } catch {}
-    const stripped = stripPrefix(message?.payload)
-    const requestId = message?.payload?.args?.requestId ?? message?.payload?.args?.options?.requestId
-    const install = INSTALL_ENDPOINTS.has(endpoint)
-    const toWsl = stripped.wsl || (requestId !== undefined && wslInstalls.has(requestId)) || (install && installTarget === 'wsl')
-    // The one switch of an official bundle both sides ship sets both sides (the WSL side first; this Host's answer is
-    // the one the page shows).
-    if (!toWsl && endpoint === 'pluginManager/setBundleEnabled') await alsoOnWsl(message?.payload?.args)
-    if (!toWsl) {
-      // Installing here: a WSL path typed into the dialog becomes the Windows path of the same directory.
-      const local = install && process.platform === 'win32' ? withSpec(message.payload, (spec) => toWindowsSpec(spec, remoteGraph?.distro)) : undefined
-      const replay = local && local !== message.payload ? Buffer.from(JSON.stringify({ ...message, payload: local })) : body
-      req[Symbol.asyncIterator] = async function* () { yield replay }
-      if (replay !== body) req.headers['content-length'] = String(replay.length)
-      return next()
-    }
-    if (install) stripped.value = withSpec(stripped.value, toWslSpec)
-    if (endpoint === 'pluginManager/installBundle' && requestId !== undefined) wslInstalls.add(requestId)
-    const answerJson = await forwardApi(pathname, Buffer.from(JSON.stringify({ ...message, payload: stripped.value }))).then((r) => r.json())
-    if (answerJson?.result?.ok) answerJson.result.value = prefixResult(answerJson.result.value)
-    return json(answerJson)
-  }
-
+  }), 'wsl-mirror: WSL plugins route')
   const failed = (res, body, error) => {
     let rpcId = null
     try { rpcId = JSON.parse(body.toString('utf8')).rpcId } catch {}
@@ -503,17 +438,7 @@ export async function apply(ctx, config = {}) {
     // A Fetch route only a WSL plugin registered (DS Bot's /api/bot and its live feed): pass the request through.
     if (sameVersion && wslFetchRoute(pathname, req.method)) return forwardRequest(req, res, { origin: true })
     const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]
-    if (!sameVersion && installTarget === 'wsl' && INSTALL_ENDPOINTS.has(endpoint)) {
-      // Never fall back to installing on this Host when the person chose WSL.
-      let rpcId = null
-      try { rpcId = JSON.parse((await readBody(req)).toString('utf8')).rpcId } catch {}
-      const message = remoteGraph === undefined ? 'The WSL Host is not connected.' : `The WSL Host runs DSH ${remoteGraph.graph.release?.version}, this one ${raw.release?.version}.`
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ type: 'server-response', rpcId, result: { ok: false, error: { code: 'internal', message: `${message} Switch the install location to Windows in the Add plugin menu, or fix the WSL side first.` } } }))
-      return
-    }
     if (!sameVersion) return next()
-    if (endpoint && PLUGIN_NAMESPACES.has(endpoint.split('/')[0])) return pluginCall(req, res, next, pathname, endpoint)
     if (method === undefined) return endpoint ? routing.call(req, res, next, pathname, endpoint) : next()
     const body = await readBody(req)
     if (method === 'describe') {

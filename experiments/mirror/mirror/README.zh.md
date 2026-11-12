@@ -43,6 +43,8 @@
 
 ## 在 WSL 里装插件
 
+Desktop 在 WSL 里用自己单独的 profile（`desktop-wsl`）运行任务，一开始只有 DSH 的官方插件：你给自己的 `dsh web`（或其他 profile）装的插件不会自动带过来。想在 Desktop 窗口里用的，在这里装：
+
 插件 →「WSL（发行版名）」→ 在安装框里填 npm 包名、git 地址或本地文件夹路径 → 检查 → 安装。Windows 路径会自动换成 WSL 路径。提示需要重启的，完全退出 Desktop，等 5 秒以上再打开。
 
 ## 更新

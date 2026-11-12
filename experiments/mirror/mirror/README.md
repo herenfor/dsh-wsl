@@ -43,6 +43,8 @@ The install box in step 1 also takes these, but a plugin installed this way cann
 
 ## Installing plugins in WSL
 
+Desktop runs its WSL tasks in a profile of its own in WSL, `desktop-wsl`, which starts with DSH's official plugins only: plugins you installed for your own `dsh web` (or another profile) are not carried over. Install the ones you want in the Desktop window here:
+
 Plugins → "WSL (distribution)" → enter an npm package name, git URL or local folder path in the install box → Check → Install. Windows paths are turned into WSL paths. When it says a restart is needed, quit Desktop completely, wait at least 5 seconds and open it again.
 
 ## Updates

@@ -257,6 +257,12 @@
 - `plugin-manager/detail-file`、`plugin-market/detail-file`（R1）：分别是官方「已安装」页（只列 Windows 插件）和插件市场的说明图片，本来就该本机答；WSL 插件的说明图片走插件自己的 `/wsl-bridge/plugin-file`。
 - `load=` 参数（R3）：页面每次挂载图片都带一个新的 `load`，DSH 的 302 故意不带它，所以带版本号的 200 能命中缓存，每次只多一次 302。WSL 任务多一次桥接往返（测试环境里约 10 ms），不改。
 
-**修不了的**：WSL 文件夹（`\\wsl.localhost\…`）里的任务，回复里用**相对路径**引用的图片仍然显示不出来。页面把相对路径接在任务的工作目录后面，得到 `\\wsl.localhost\…\a.png`，而页面拼 `/api/file` 地址时拒绝 `\\` 开头的路径，请求根本不会发出。让页面看到 POSIX 形式的工作目录可以绕开，但侧栏要拿任务的工作目录和文件夹路径比对（复用空白任务、文件夹名），会坏掉别的。DSH 的提示词让模型写"相对工作目录或绝对"的路径，所以这种情况不少见。可选的缓解：WSL 端的 agent 插件给模型加一句"Markdown 图片用绝对路径"，或者请 DSH 让页面按任务解析图片（`sessionFileAddress`）。Windows 文件夹里在 WSL 运行的任务不受影响（工作目录是 `C:\…`）。
+**相对路径的图片**：WSL 文件夹（`\\wsl.localhost\…`）里的任务，回复里用相对路径引用的图片，页面把它接在任务的工作目录后面，得到 `\\wsl.localhost\…\a.png`，而聊天拼 `/api/file` 地址时拒绝 `\\` 开头的路径，请求根本不会发出。DSH 的提示词让模型写"相对工作目录或绝对"的路径，所以这种情况很常见。让页面看到 POSIX 形式的工作目录不行：侧栏要拿任务的工作目录和文件夹路径比对（复用空白任务、文件夹名）。
+
+做法（`client.js` 开头）：聊天把图片解析器（`fileImages`）通过 `MarkdownDelegateProvider` 交给 Markdown，这个元素是渲染时经共享的 `react/jsx-runtime` 建的。页面把 jsx-runtime 包成冻结的模块对象，但它的成员是读 CommonJS 导出（`default`）的 getter，所以插件在页面里给 `jsx`/`jsxs` 套一层：只有建 `MarkdownDelegateProvider` 时，把 `fileImages.resolve` 换成"原来的解析，解析不出时再看这张图的资源地址"。资源地址（`dsh-resource://file/session/<任务>/<路径>`）是聊天用同一个工作目录拼的；路径是 `//wsl.localhost/…` 或 `//wsl$/…` 时，返回 `/api/file?path=<这个 UNC 路径>`，由 Desktop 端交给 WSL 端（当前发行版）或 Windows 自己读（其他发行版）。别的情况、别的组件一律不动；包好的解析器按原对象缓存（WeakMap），不会每次渲染都换新对象。DSH 改了这些名字或结构时，这层直接不生效，图片回到原来的样子，不会出错。
+
+看图器的「在文件夹显示」会先用 UNC 路径 `workspaceFiles/stat`（上面的转换让 WSL 端读得到），再拿到 `/home/…` 去打开（原有的转换交给 Windows）。
 
 验证：单元测试加了 `wslFilePath`（POSIX、两种 UNC 写法、大小写、其他发行版、其他机器、Windows 路径、相对路径、空值）。测试 Desktop 里：POSIX、`//wsl.localhost/Ubuntu/…`、`\\wsl.localhost\Ubuntu\…` 三种写法都由 WSL 端答 302 → 200 `image/png`，缓存头 `immutable`，HEAD 带长度；不存在的文件 WSL 答 404 后退回本机；`workspaceFiles/stat` 用相对路径、POSIX 和两种 UNC 写法都解析到同一个文件。测试环境两边是同一个 Linux 文件系统，真 Windows 上的效果要在真机上看。
+
+相对路径图片的验证（测试 Desktop，假模型让 WSL 任务回一段带图片的 Markdown）：`/home/…`、相对路径、`//wsl.localhost/Ubuntu/…`、`\\wsl.localhost\Ubuntu\…` 四张图都显示（后两张就是原来会被拒绝的 UNC 路径，走上面的兜底），另一个发行版的显示"图片无法预览"（测试环境的"Windows"是 Linux，读不了 UNC）。点开看图器大图加载；右键菜单是"复制图片 / 下载 / 在文件夹显示"，最后一项先 `workspaceFiles/stat` UNC 路径，再 `session/openWorkspacePath` 带 `/home/…`。测试环境里任务的工作目录本来就是 POSIX，所以相对路径那张走的是原来的解析；真 Windows 上相对路径会变成 UNC，走的是和 `\\wsl.localhost\…` 那张同一条路，仍要在真机上看一眼。

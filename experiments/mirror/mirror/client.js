@@ -8,6 +8,63 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
+    // ---- pictures in WSL tasks named by a relative path (docs/deployment.md, 0.1.11). The chat resolves a picture
+    // against the task's folder as the page shows it; for a folder inside WSL that is \\wsl.localhost\<distro>\…, and
+    // the chat will not build an /api/file address for a path starting with \\. The chat hands its resolver to the
+    // markdown through MarkdownDelegateProvider, created through the shared jsx runtime at render time: that call gets
+    // a resolver that falls back, for such a path only, to the same /api/file address with the \\wsl.localhost path
+    // (the Desktop Host sends it to the WSL side, index.mjs). The path comes from the picture's own resource address,
+    // which the chat builds from the same folder. Nothing else the chat passes is changed.
+    ;(() => {
+      let Provider, runtime
+      try { Provider = require('@deepseek-ai/dsh-client-ui-primitives').MarkdownDelegateProvider; runtime = require('react/jsx-runtime') } catch { return }
+      // The page exposes jsx-runtime as a frozen namespace whose members read the CommonJS exports (its `default`).
+      const exports = runtime?.default
+      if (typeof Provider !== 'function' || !exports || typeof exports !== 'object' || Object.isFrozen(exports)) return
+      const fileUrl = (path) => {
+        const base = document.baseURI
+        if (!/^https?:/.test(base) && !base.startsWith('dsh-app://app/')) return undefined
+        return new URL(`api/file?path=${encodeURIComponent(path)}`, base).href
+      }
+      // dsh-resource://file/session/<task>/<path, each segment URI-encoded>; only \\wsl.localhost and \\wsl$ paths.
+      const wslUncOf = (address) => {
+        const m = /^dsh-resource:\/\/file\/session\/[^/]*\/(.*)$/s.exec(typeof address === 'string' ? address : '')
+        if (!m) return undefined
+        let path
+        try { path = m[1].split('/').map(decodeURIComponent).join('/') } catch { return undefined }
+        return /^\/\/(?:wsl\.localhost|wsl\$)\/[^/]+\/./i.test(path) ? path : undefined
+      }
+      const wrapped = new WeakMap()
+      const withFallback = (images) => {
+        if (typeof images?.resolve !== 'function' || typeof images.resourceAddress !== 'function') return images
+        let out = wrapped.get(images)
+        if (out === undefined) {
+          out = {
+            ...images,
+            resolve: (path) => {
+              const url = images.resolve(path)
+              if (url !== undefined) return url
+              let unc
+              try { unc = wslUncOf(images.resourceAddress(path)) } catch {}
+              return unc === undefined ? undefined : fileUrl(unc)
+            },
+          }
+          wrapped.set(images, out)
+        }
+        return out
+      }
+      for (const name of ['jsx', 'jsxs']) {
+        const original = exports[name]
+        if (typeof original !== 'function' || original.dshWslImages) continue
+        const patched = function (type, props, ...rest) {
+          if (type === Provider && props?.fileImages) props = { ...props, fileImages: withFallback(props.fileImages) }
+          return original.call(this, type, props, ...rest)
+        }
+        patched.dshWslImages = true
+        try { exports[name] = patched } catch {}
+      }
+    })()
+
     // ---- text: one dictionary per language under one namespace of DSH's locale service, so the page follows the
     // language set in DSH; a language without a dictionary falls back to English, as DSH's own text does. To add a
     // language, add a block to DICT with the same keys as `en` (missing keys fall back to English), and its text in

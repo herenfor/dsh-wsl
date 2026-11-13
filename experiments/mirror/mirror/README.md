@@ -124,7 +124,6 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 - Closing Desktop stops the WSL side as well; WSL tasks do not keep running in the background, and WSL's scheduled tasks run only while Desktop is open.
 - Referring to another task with @ works only within one side: a WSL task is offered WSL tasks, a Windows task Windows tasks.
 - The "All plugins" page in Settings lists Windows plugins only; WSL plugins are on the "WSL (distribution)" tab.
-- In tasks in a WSL folder (`\\wsl.localhost\…`), images a reply refers to by a relative path are not shown; absolute paths (`/home/…`) work. Tasks in a Windows folder that run in WSL are not affected.
 
 ## Screenshot credits
 

@@ -124,7 +124,6 @@ Desktop 在 WSL 里用自己的 profile（`desktop-wsl`）运行任务，插件�
 - 关闭 Desktop 后 WSL 端也会退出，WSL 任务不会在后台继续运行；WSL 的定时任务也只在 Desktop 开着时运行。
 - 用 @ 引用其他任务时，只能引用同一边的任务：WSL 任务的候选里只有 WSL 任务，Windows 任务的候选里只有 Windows 任务。
 - 设置里「全部插件」一页只列 Windows 的插件，WSL 的插件在「WSL（发行版名）」标签页里看。
-- WSL 文件夹（`\\wsl.localhost\…`）里的任务，回复里用相对路径引用的图片显示不出来，用绝对路径（`/home/…`）的可以。Windows 文件夹里在 WSL 运行的任务不受影响。
 
 ## 截图说明
 

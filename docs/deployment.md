@@ -235,3 +235,28 @@
 ## 0.1.10（2026-11-12）
 
 - 预设卡片上加的说明（"作为新任务默认时……"）以前用换行接在原描述后面，页面把换行显示成空格，读起来连在一起。现在作为下一句接上：中文描述补「。」，英文补 ". "，原描述已经以句号结尾的不再补。真机验证时发现。
+
+## WSL 任务里的图片 404（2026-11-13，用户报告，0.1.10 及以前）
+
+现象：WSL 任务的回复里用绝对路径（`/home/…`）引用的图片显示不出来，点开看图器也是空的。报告人查到 `dsh-app://app/api/file?path=/home/...` 由 Windows 端 Host 应答 404：这个地址不带任务，插件以前只按任务分流 RPC，`/api/file` 一律落在本机。
+
+**修法（0.1.11）**：在插件已有的 `/api` 请求钩子（`connection/request`，登录检查之后）里处理 `GET/HEAD /api/file`，不注册路由，也就不和 DSH 的 `/api` 前缀抢位置（报告里的 R4）。按路径判断（`paths.mjs` 的 `wslFilePath`）：
+
+- `/home/…`、`/mnt/c/…` 这类 POSIX 绝对路径送 WSL 端读。WSL 端没有这个文件（404）或连不上时退回本机，因为 `/x` 在 Windows 上也是当前盘符下的路径。
+- `\\wsl.localhost\<当前发行版>\…`（正斜杠写法也算）换成 WSL 路径送过去；别的发行版、别的机器的 UNC 路径留在本机，由 Windows 直接读（R2）。
+- Windows 路径（`C:\…`）留在本机。WSL 任务在 Windows 文件夹里时，页面看到的是 `C:\…`，本机本来就读得到。
+- WSL 端的 302（带版本号的地址）是相对地址，页面再来请求时还会带着 WSL 路径回到这里；带版本号的 200 可以长期缓存。
+- 发往 WSL 的请求遇到 401（WSL 端 cookie 过期）时，丢掉 cookie 重新换一次再试（R5）；这条也对其他转发生效，下一次请求就会换新的。
+
+同时：发往 WSL 的 `workspaceFiles/*` 调用里，`path` 是页面形式的（`\\wsl.localhost\<发行版>\…`、`//wsl.localhost/…`、`D:\…`），转换成 WSL 路径再发；其他发行版的保持原样。
+
+**顺带确认过、不用改的**（报告里的另外几条）：
+
+- 拖出图片：外壳先请 Windows 端 Host 按任务找本机文件，WSL 任务找不到就退回用图片地址读出字节再拖。`/api/file` 修好后拖出也就好了，拖出去的是临时目录里的一份副本。
+- 看图器的右键菜单：「打开 / 在资源管理器中显示 / 用其他应用打开」走 `session/openWorkspacePath`、`workspacePathApplications`，插件早就把 `/home/…` 换成 `\\wsl.localhost\…` 交给 Windows；「在侧栏打开」走 `dsh-resource://file/session/<任务>/…`，按任务分流到 WSL。
+- `plugin-manager/detail-file`、`plugin-market/detail-file`（R1）：分别是官方「已安装」页（只列 Windows 插件）和插件市场的说明图片，本来就该本机答；WSL 插件的说明图片走插件自己的 `/wsl-bridge/plugin-file`。
+- `load=` 参数（R3）：页面每次挂载图片都带一个新的 `load`，DSH 的 302 故意不带它，所以带版本号的 200 能命中缓存，每次只多一次 302。WSL 任务多一次桥接往返（测试环境里约 10 ms），不改。
+
+**修不了的**：WSL 文件夹（`\\wsl.localhost\…`）里的任务，回复里用**相对路径**引用的图片仍然显示不出来。页面把相对路径接在任务的工作目录后面，得到 `\\wsl.localhost\…\a.png`，而页面拼 `/api/file` 地址时拒绝 `\\` 开头的路径，请求根本不会发出。让页面看到 POSIX 形式的工作目录可以绕开，但侧栏要拿任务的工作目录和文件夹路径比对（复用空白任务、文件夹名），会坏掉别的。DSH 的提示词让模型写"相对工作目录或绝对"的路径，所以这种情况不少见。可选的缓解：WSL 端的 agent 插件给模型加一句"Markdown 图片用绝对路径"，或者请 DSH 让页面按任务解析图片（`sessionFileAddress`）。Windows 文件夹里在 WSL 运行的任务不受影响（工作目录是 `C:\…`）。
+
+验证：单元测试加了 `wslFilePath`（POSIX、两种 UNC 写法、大小写、其他发行版、其他机器、Windows 路径、相对路径、空值）。测试 Desktop 里：POSIX、`//wsl.localhost/Ubuntu/…`、`\\wsl.localhost\Ubuntu\…` 三种写法都由 WSL 端答 302 → 200 `image/png`，缓存头 `immutable`，HEAD 带长度；不存在的文件 WSL 答 404 后退回本机；`workspaceFiles/stat` 用相对路径、POSIX 和两种 UNC 写法都解析到同一个文件。测试环境两边是同一个 Linux 文件系统，真 Windows 上的效果要在真机上看。

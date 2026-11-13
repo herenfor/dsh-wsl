@@ -16,7 +16,7 @@ import { mergeGraphs, requestedPackages, compatibleReleases } from './merge.mjs'
 import { DROP_RESPONSE_HEADERS, eventStreamRewriter, FORWARD_REQUEST_HEADERS, isJson, routesToForward } from './routes.mjs'
 import { mergeDescribe, settingsMethod, SETTINGS_WRITES, sharedNamespaces, syncOps } from './settings.mjs'
 import { wslBundles, wslBundlePage } from './plugins.mjs'
-import { toWslSpec } from './paths.mjs'
+import { toWslSpec, wslFilePath } from './paths.mjs'
 import { installSessionRouting } from './routing.mjs'
 import { createChoices, intendedSection, overlayView, REFERENCE_NAMESPACES, resolveSection, wslSection } from './refs.mjs'
 import { translateLoose } from './ids.mjs'
@@ -171,6 +171,8 @@ export async function apply(ctx, config = {}) {
       if (!origin) return reject(new Error('the WSL DSH Host is not available'))
       const url = new URL(path, origin)
       const req = http.request({ agent: bridge.agent, host: url.hostname, port: url.port, path: url.pathname + url.search, method, headers: { ...headers, host: url.host } }, (res) => {
+        // The WSL Host no longer takes the cookie (it expired): exchange the launch token again on the next call.
+        if (res.statusCode === 401 && headers.cookie !== undefined && headers.cookie === cookieValue) cookieValue = undefined
         const out = new Headers()
         for (const [name, value] of Object.entries(res.headers)) for (const v of [].concat(value)) out.append(name, v)
         const empty = method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304
@@ -248,6 +250,46 @@ export async function apply(ctx, config = {}) {
       res.end(`wsl-mirror: the WSL Host did not answer (${error.message})\n`)
     }
   }
+
+  // Response headers of a file read passed back as they are (no body is rewritten, so the length stays).
+  const FILE_DROP = new Set(['set-cookie', 'connection', 'keep-alive', 'transfer-encoding'])
+  const fileDebug = process.env.DSH_WSL_DEBUG ? (...a) => { try { appendFileSync(process.env.DSH_WSL_DEBUG, `${new Date().toISOString()} file ${a.join(' ')}\n`) } catch {} } : () => {}
+  /**
+   * GET/HEAD /api/file on the WSL Host. Its redirect to the versioned URL (`?path=…&v=…`) is relative, so the page
+   * comes back here with the WSL path. A POSIX path the WSL side does not have (404), or a WSL side that cannot be
+   * reached, falls back to this Host: a path like /x is also a path on this computer's current drive.
+   */
+  async function wslFile(req, res, next, url, wslPath) {
+    const fromUnc = wslPath !== url.searchParams.get('path')
+    url.searchParams.set('path', wslPath)
+    const abort = new AbortController()
+    res.on('close', () => abort.abort())
+    const headers = {}
+    for (const name of FORWARD_REQUEST_HEADERS) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name]
+    let upstream
+    try {
+      for (let attempt = 0; ; attempt++) {
+        upstream = await remoteFetch(`/api/file${url.search}`, { method: req.method, headers: { ...headers, cookie: await cookie() }, signal: abort.signal })
+        if (upstream.status !== 401 || attempt > 0) break
+        await upstream.body?.cancel()   // remoteFetch dropped the cookie: one more try with a new one
+      }
+    } catch (error) {
+      if (abort.signal.aborted) return
+      ctx.logger.debug?.('wsl-mirror: /api/file on the WSL side failed: %s', error.message)
+      fileDebug(wslPath, 'WSL failed:', error.message)
+      return fromUnc ? fileFailure(res, 502) : next()
+    }
+    fileDebug(req.method, wslPath, 'WSL', upstream.status, upstream.status === 404 && !fromUnc ? '→ this Host' : '')
+    if (upstream.status === 404 && !fromUnc) { await upstream.body?.cancel(); return next() }
+    const out = {}
+    for (const [name, value] of upstream.headers) if (!FILE_DROP.has(name)) out[name] = value
+    res.writeHead(upstream.status, out)
+    try {
+      if (upstream.body) for await (const chunk of upstream.body) { if (!res.write(chunk)) await new Promise((r) => res.once('drain', r)) }
+    } catch {}
+    res.end()
+  }
+  const fileFailure = (res, status) => { res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'private, no-store' }); res.end('the WSL side did not answer') }
 
   /** Whether `path` is an exact Fetch route the WSL Host has for `method` and this Host does not. */
   function wslFetchRoute(path, method) {
@@ -609,6 +651,13 @@ export async function apply(ctx, config = {}) {
     const sameVersion = remoteGraph !== undefined && compatibleReleases(raw.release, remoteGraph.graph.release)
     if (req.headers[INNER] !== undefined) return next()
     choices.noteCookie(req.headers.cookie)
+    // Pictures and files the page shows by path (GET /api/file?path=…: the chat's images, their viewer, dragging one
+    // out). The URL names no task, so the path decides: a WSL path is read on the WSL side (wslFilePath).
+    if (pathname === '/api/file' && (req.method === 'GET' || req.method === 'HEAD') && remoteOrigin()) {
+      const url = new URL(req.url ?? '/', 'http://x')
+      const wslPath = wslFilePath(url.searchParams.get('path'), remoteGraph?.distro ?? setup.distro)
+      if (wslPath !== undefined) return wslFile(req, res, next, url, wslPath)
+    }
     // A Fetch route only a WSL plugin registered (DS Bot's /api/bot and its live feed): pass the request through.
     if (sameVersion && wslFetchRoute(pathname, req.method)) return forwardRequest(req, res, { origin: true })
     const endpoint = /^\/api\/([\w$]+\/[\w$]+)$/.exec(pathname)?.[1]

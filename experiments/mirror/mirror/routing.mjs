@@ -18,6 +18,7 @@ import { applyWorkspaceFrame, baselineFrames, localizeSessions, mergeWorkspaces,
 import { remoteError, upgradeHeaders, WslMux } from './remote-mux.mjs'
 import { mapScheduleCwds, mergeDeleteInactive, mergeModelCatalog, mergePermissionCatalog, mergePresets, mergeScheduleCatalog, mergeScheduleList, mergeWebProviders, placeSchedule } from './hostlists.mjs'
 import { createChoices, hasModel } from './refs.mjs'
+import { wslFilePath } from './paths.mjs'
 
 /** Namespaces that belong to this Host whatever they name (handled elsewhere or never per-session). */
 const LOCAL_ONLY = /^(?:settings|credentials|plugins|pluginManager|pluginInventory|pluginMarket|pluginRegistryProbe|pluginRecommendations|cordis|account|remoteAccess|productAnalytics|llm|directoryPicker)\//
@@ -273,6 +274,12 @@ export function installSessionRouting(ctx, { bridge, remoteOrigin, cookie, forwa
     let route
     try { route = routeOf(args, endpoint) } catch (error) { return reply(res, message.rpcId, failure(error.code, error.message)) }
     if (route === 'local') return local()
+    if (endpoint.startsWith('workspaceFiles/') && typeof args.path === 'string' && (!args.path.startsWith('/') || args.path.startsWith('//'))) {
+      // A WSL task's file named the way the page shows its folder (\\wsl.localhost\<distro>\…, D:\…): the WSL Host
+      // reads it as /home/…, /mnt/d/…. Another distribution's path is left as it is (the WSL Host cannot read it).
+      const path = /^[\\/]{2}/.test(args.path) ? wslFilePath(args.path, distro()) ?? args.path : paths().toWsl(args.path)
+      if (path !== args.path) return forward(res, pathname, message, { ...payload, args: { ...args, path } })
+    }
     if (endpoint === 'sessionReferenceResolver/candidates') {
       // @-mentions in a WSL task list that Host's tasks; their folders are shown as the sidebar shows them.
       const result = await rpc(endpoint, translate(args, false))

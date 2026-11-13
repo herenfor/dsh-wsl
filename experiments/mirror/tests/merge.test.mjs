@@ -228,3 +228,22 @@ test('which profile plugin a row\'s code lives in, linked plugins included', asy
   assert.deepEqual(s.origin, { '@deepseek-ai/dsh-client-ui-chat': 'user', '@deepseek-ai/dsh-client-ui-tool': 'builtin', stray: 'user' })
   assert.deepEqual(s.owner, { '@deepseek-ai/dsh-client-ui-chat': 'tuning' })
 })
+
+test('wslFilePath: which /api/file paths the WSL side reads, and as what', async () => {
+  const { wslFilePath } = await import('../mirror/paths.mjs')
+  assert.equal(wslFilePath('/home/s/proj/out.png', 'Ubuntu'), '/home/s/proj/out.png')
+  assert.equal(wslFilePath('/mnt/c/Users/s/a.png', 'Ubuntu'), '/mnt/c/Users/s/a.png')
+  assert.equal(wslFilePath('\\\\wsl.localhost\\Ubuntu\\home\\s\\a.png', 'Ubuntu'), '/home/s/a.png')
+  assert.equal(wslFilePath('//wsl.localhost/ubuntu/home/s/a.png', 'Ubuntu'), '/home/s/a.png')
+  assert.equal(wslFilePath('\\\\wsl$\\Ubuntu\\etc\\hostname', 'Ubuntu'), '/etc/hostname')
+  assert.equal(wslFilePath('\\\\wsl.localhost\\Ubuntu', 'Ubuntu'), '/')
+  // another distribution, another machine, Windows paths, nothing: left to the Desktop Host
+  assert.equal(wslFilePath('\\\\wsl.localhost\\Debian\\home\\s\\a.png', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath('\\\\wsl.localhost\\Ubuntu\\home\\a.png', undefined), undefined)
+  assert.equal(wslFilePath('//server/share/a.png', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath('C:\\Users\\s\\a.png', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath('C:/Users/s/a.png', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath('out.png', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath('', 'Ubuntu'), undefined)
+  assert.equal(wslFilePath(null, 'Ubuntu'), undefined)
+})

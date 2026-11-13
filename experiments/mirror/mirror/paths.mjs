@@ -22,3 +22,16 @@ export function toWindowsSpec(spec, distro) {
   if (!distro) return spec
   return `${prefix}\\\\wsl.localhost\\${distro}${path.replace(/\//g, '\\')}`
 }
+
+/**
+ * Where the WSL side reads a file the page names by path (GET /api/file, the chat's pictures): a POSIX absolute path
+ * as it is, and a \\wsl.localhost (or \\wsl$) path of `distro` as WSL sees it. Undefined for anything else: Windows
+ * paths, other machines' UNC paths and other distributions' paths stay with the Desktop Host, which can read them.
+ */
+export function wslFilePath(path, distro) {
+  if (typeof path !== 'string' || path.length === 0 || path.includes('\0')) return undefined
+  if (path.startsWith('/') && !path.startsWith('//')) return path
+  const unc = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)(?:[\\/](.*))?$/is.exec(path)
+  if (!unc || typeof distro !== 'string' || unc[1].toLowerCase() !== distro.toLowerCase()) return undefined
+  return `/${(unc[2] ?? '').replace(/\\/g, '/')}`.replace(/(.)\/+$/, '$1')
+}

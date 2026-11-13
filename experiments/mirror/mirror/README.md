@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task that runs in WSL, the agent, its commands, file access and plugins all run in a DSH inside WSL, while you keep using the Desktop window.
 
-> Beta. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
+> Beta. Tested with DSH 0.2.2-rc.1, 0.2.2-rc.2 and 0.2.2-rc.3 so far. Please report problems on [GitHub](https://github.com/herenfor/dsh-wsl/issues).
 
 ![The new-task page: the sidebar lists Windows and WSL tasks together, the run location is picked under the input box; the desktop pet in the corner is a plugin installed in WSL](https://raw.githubusercontent.com/herenfor/dsh-wsl/main/docs/screenshots/home-en.webp)
 
@@ -17,6 +17,8 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task that runs 
 - **Linux plugins just work**: plugins installed in WSL, including ones that change the interface, work in the Desktop window, and have their own WSL tab on the Plugins page.
 - **Credentials stay out of WSL**: WSL tasks get model credentials from Desktop; nothing is written to the WSL disk.
 - **No official code changed**: built only from plugins and external components, starting and stopping with Desktop.
+
+**rc.3 live verification (2026-11-14):** Windows Desktop and WSL both ran DSH `0.2.2-rc.3`. The `0.1.12-dev.1` candidate verified automatic discovery, persistent migration of old pnpm entries, rc.3 Host / daemon startup, and connection and task mirroring after the first restart. UI behavior was checked through code and state; migration logs were not observed directly. This acceptance did not cover every plugin combination or a second restart.
 
 ## Requirements
 
@@ -118,7 +120,7 @@ Plugins → "WSL (distribution)" → enter an npm package name, git URL or local
 
 ## Known limitations
 
-- Tested only with DSH 0.2.2-rc.1 and 0.2.2-rc.2. Desktop and the DSH in WSL must match in the first two parts of their versions.
+- Tested only with DSH 0.2.2-rc.1, 0.2.2-rc.2 and 0.2.2-rc.3. Desktop and the DSH in WSL must match in the first two parts of their versions.
 - In the separate-copy mode, WSL tasks are not shared with your own dsh, and tasks cannot be moved between the two ways yet.
 - Reusing your dsh runs its package directly with Node, with its data in `~/.dsh`. It does not go through launch scripts or wrappers of your own: environment variables, ports or a `DSH_HOME` set there are not applied.
 - When a WSL plugin's patch changes the configuration of an official component (rather than switching it off), that change does not apply in the Desktop window.

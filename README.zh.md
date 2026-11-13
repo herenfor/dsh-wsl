@@ -45,7 +45,9 @@
 
 复用模式会自动识别 PATH 和常见独立安装目录中的 DSH；一般无需填写入口。手动入口在「高级」中设置。已有 pnpm 版本路径会在对应稳定包入口有效时自动修复；升级后重新检查即可识别新版本。
 
-需要 Windows 10 或 11 上的 DSH Desktop 0.2.x 和 WSL 2。目前在 DSH 0.2.2-rc.1 和 0.2.2-rc.2 上测试过。功能细节、其他安装方式、更新、卸载、排错和已知限制，见[插件说明](experiments/mirror/mirror/README.zh.md)。
+**rc.3 实测（2026-11-14）**：Windows Desktop 与 WSL 均为 DSH `0.2.2-rc.3`，使用 `0.1.12-dev.1` 候选包确认了入口自动识别、旧 pnpm 路径持久化迁移、rc.3 Host / daemon 启动，以及首次重启后的连接和任务镜像。UI 仅核对代码与状态，迁移日志未直接观察；这次验收未覆盖全部插件组合或第二次重启。
+
+需要 Windows 10 或 11 上的 DSH Desktop 0.2.x 和 WSL 2。目前在 DSH 0.2.2-rc.1、0.2.2-rc.2 和 0.2.2-rc.3 上测试过。功能细节、其他安装方式、更新、卸载、排错和已知限制，见[插件说明](experiments/mirror/mirror/README.zh.md)。
 
 ---
 

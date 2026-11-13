@@ -48,6 +48,9 @@ if on_npm "$version"; then
 fi
 echo "$name $current -> $version (npm tag: $npm_tag)"
 
+step "tested DSH versions and acceptance scope"
+node scripts/check-compatibility.mjs
+
 step "tests"
 node --test experiments/mirror/tests/*.test.mjs 2>&1 | grep -E '^ℹ (pass|fail)|^not ok|✖' || true
 node --test experiments/mirror/tests/*.test.mjs >/dev/null 2>&1 || { echo "tests failed" >&2; exit 1; }

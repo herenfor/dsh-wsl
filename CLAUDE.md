@@ -4,8 +4,8 @@
 
 ## 现在的状态
 
-- npm 上最新是 **0.1.8**。main 上还没发的：DS Bot 截图、`dev/` 测试工具（含 `dev/scan/` 兼容扫描）、这份说明，随 0.1.9 一起发。
-- 测过 DSH 0.2.2-rc.1 和 rc.2；Desktop 和 WSL 里的 DSH 版本前两段必须一样。
+- 本地包版本及已发布版本以 `package.json` 和 npm registry 为准，不把旧说明里的版本当作当前状态。
+- 已测试 DSH 0.2.2-rc.1、rc.2 和 rc.3。rc.3 的具体范围与限制见四份 README；对应真实 Desktop 验收使用 0.1.12-dev.1 候选包。
 - 每个版本修了什么、为什么，见 [docs/deployment.md](docs/deployment.md) 后半部分（一个 bug 一节）。设计决定见 `docs/` 其他文档。
 
 ## 正在做的
@@ -36,6 +36,8 @@ scripts/release.sh 0.1.9 --dry-run                # 发布预演：测试、组�
 端到端测试、截图、日志位置见 [dev/README.md](dev/README.md)：Linux 上的 `dsh web` 冒充 Desktop，假 `wsl.exe` 把 WSL 指到 `~/dshwsl-fh`。
 
 ## 规则（所有者定的，必须遵守）
+
+- **每次 npm 发版前确认实测版本**：先读取最新使用端验收，记录实际插件版本、Desktop/WSL DSH 版本、验证范围和未验证项，更新 `docs/compatibility.json` 及根目录/包目录四份中英文 README。单元测试或隔离启动不能冒充真实环境验收；发布预演会检查版本列表一致性。
 
 - **官方 DSH 不接受 PR**：一切都用插件和外部组件实现，不改官方代码。
 - **发布到 npm 由所有者操作**：agent 把 main 准备好、跑通 `--dry-run`，把 `scripts/release.sh <版本> --local` 交给所有者运行（要 npm 登录和两步验证）。不要自己发布。

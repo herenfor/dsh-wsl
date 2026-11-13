@@ -1,0 +1,11 @@
+{
+  "testedDshVersions": ["0.2.2-rc.1", "0.2.2-rc.2", "0.2.2-rc.3"],
+  "latestAcceptance": {
+    "date": "2026-11-14",
+    "pluginVersion": "0.1.12-dev.1",
+    "desktopDshVersion": "0.2.2-rc.3",
+    "wslDshVersion": "0.2.2-rc.3",
+    "scope": "真实 Windows Desktop：自动识别、旧 pnpm 路径持久化迁移、rc.3 Host/daemon、首次重启后的连接与任务镜像",
+    "limits": "UI 仅代码/状态确认；未直接观察迁移日志，未覆盖第二次重启及所有插件组合"
+  }
+}

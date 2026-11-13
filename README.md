@@ -45,7 +45,9 @@ English · [中文](README.zh.md)
 
 Reuse mode detects DSH on PATH and in common standalone install folders, so an entry usually needs no input. Manual entries are under “Advanced”. Saved pnpm version paths are repaired when the corresponding stable package entry is valid; check again after upgrading to pick up the new version.
 
-Needs DSH Desktop 0.2.x on Windows 10 or 11, and WSL 2. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Feature details, other ways to install, updates, uninstalling, troubleshooting and known limitations are in the [plugin's README](experiments/mirror/mirror/README.md).
+**rc.3 live verification (2026-11-14):** Windows Desktop and WSL both ran DSH `0.2.2-rc.3`. The `0.1.12-dev.1` candidate verified automatic discovery, persistent migration of old pnpm entries, rc.3 Host / daemon startup, and connection and task mirroring after the first restart. UI behavior was checked through code and state; migration logs were not observed directly. This acceptance did not cover every plugin combination or a second restart.
+
+Needs DSH Desktop 0.2.x on Windows 10 or 11, and WSL 2. Tested with DSH 0.2.2-rc.1, 0.2.2-rc.2 and 0.2.2-rc.3 so far. Feature details, other ways to install, updates, uninstalling, troubleshooting and known limitations are in the [plugin's README](experiments/mirror/mirror/README.md).
 
 ---
 

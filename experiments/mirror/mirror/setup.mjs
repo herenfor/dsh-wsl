@@ -63,6 +63,13 @@ export function parseDistros(text) {
 // A candidate is a dsh command, a file in the package or the package's folder. Symlinks are followed; a script shim
 // (pnpm's, node_modules/.bin/dsh) is read for the package path it runs. Project folders are not searched.
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+// A pnpm store path names a version, while the outer package link follows upgrades.
+export function stableDshEntry(entry) {
+  const marker = '/node_modules/.pnpm/'
+  const at = entry?.indexOf(marker) ?? -1
+  return at >= 0 && /\/node_modules\/@deepseek-ai\/dsh(?:\/|$)/.test(entry.slice(at + marker.length))
+    ? entry.slice(0, at) + '/node_modules/@deepseek-ai/dsh' : entry
+}
 export function probeScript({ dshEntry } = {}) {
   return String.raw`H="$HOME"; echo "home=$H"; echo "arch=$(uname -m)"
 L=$(bash -lc 'echo "@node=$(command -v node)"; echo "@dsh=$(command -v dsh)"' </dev/null 2>/dev/null)
@@ -99,6 +106,13 @@ look() {
   else echo "seen-dsh=$1|not-dsh"; fi
 }
 E=${quote(dshEntry ?? '')}
+S=${quote(stableDshEntry(dshEntry) ?? '')}
+if [ -n "$S" ] && [ "$S" != "$E" ]; then
+  T="$S"
+  case "$T" in "~/"*) T="$H/$(printf '%s' "$T" | cut -c3-)" ;; esac
+  if d=$(find_dsh "$T"); then E="$S"; fi
+fi
+echo "configured-entry=$E"
 if [ -n "$E" ]; then
   F="$E"
   case "$E" in "~") F="$H" ;; "~/"*) F="$H/$(printf '%s' "$E" | cut -c3-)" ;; */*) ;; *) F=$(bash -lc 'command -v "$1"' _ "$E" </dev/null 2>/dev/null | tail -n1) ;; esac
@@ -106,6 +120,10 @@ if [ -n "$E" ]; then
 fi
 for c in "$LD" "$(command -v dsh 2>/dev/null)" "$H/.local/bin/dsh" /usr/local/bin/dsh /usr/bin/dsh; do look "$c"; done
 for c in "$H"/.nvm/versions/node/*/bin/dsh "$H/.local/share/pnpm/dsh" "$H/.bun/bin/dsh" "$H/.npm-global/bin/dsh" "$H"/.local/share/fnm/node-versions/*/installation/bin/dsh; do
+  [ -e "$c" ] && look "$c"
+done
+# Conventional standalone installs: bounded lookup, never scan arbitrary projects or stores.
+for c in "$H/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh" "$H/.local/share/dsh/node_modules/@deepseek-ai/dsh"; do
   [ -e "$c" ] && look "$c"
 done
 true`
@@ -126,7 +144,8 @@ export function parseProbe(text) {
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf('='); if (i < 0) continue
     const key = line.slice(0, i); const value = line.slice(i + 1)
-    if (key === 'home') out.home = value
+    if (key === 'configured-entry') out.configuredEntry = value || null
+    else if (key === 'home') out.home = value
     else if (key === 'arch') out.arch = value
     else if (key === 'node') { const [path, version] = value.split(' '); if (version && !out.nodes.some((n) => n.path === path)) out.nodes.push({ path, version }) }
     else if (key === 'dsh') { try { const pkg = JSON.parse(value); out.dsh = { version: pkg.version, bin: typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.dsh, engines: pkg.engines?.node ?? null } } catch {} }
@@ -208,7 +227,7 @@ export function evaluate({ desktopVersion, listing, chosen = {}, probe }) {
   const distros = listing.distros
   if (distros.length === 0) return { state: 'no-distro', distros }
   const distro = distros.find((d) => d.name === chosen.distro) ?? distros.find((d) => d.isDefault) ?? distros[0]
-  const base = { distro: distro.name, distros, home: probe?.home, arch: probe?.arch, own: probe?.own ?? null }
+  const base = { configuredEntry: probe?.configuredEntry ?? chosen.dshEntry ?? null, distro: distro.name, distros, home: probe?.home, arch: probe?.arch, own: probe?.own ?? null }
   if (distro.version === 1) return { ...base, state: 'wsl1' }
   if (!probe) return { ...base, state: 'error', error: 'cannot look into the distribution' }
   const nodeFor = (engines) => {

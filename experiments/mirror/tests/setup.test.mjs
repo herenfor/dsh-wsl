@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { commandsFor, compareVersions, compatibleRelease, decodeWslText, evaluate, hostPathOf, installBridgeFiles, installScript, minNodeOf, nodeOk, parseDistros, parseProbe, probeScript, promptFor } from '../mirror/setup.mjs'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, rmSync } from 'node:fs'
+import { chmodSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 
 const utf16 = (text) => Buffer.from(text, 'utf16le')
 
@@ -245,4 +245,44 @@ test('the probe script finds a project-local DSH it is told about, a pnpm shim a
   assert.equal(probeWith("~/it's not here").entryMissing, "~/it's not here")
   const status = evaluate({ desktopVersion: '0.2.2-rc.1', listing: { distros: [{ name: 'U', isDefault: true, version: 2 }] }, chosen: { mode: 'reuse', dshEntry: '~/x' }, probe: probeWith(`${local}/lib/bin.js`) })
   assert.deepEqual([status.state, status.dshEntry, status.node.path], ['ready', `${local}/lib/bin.js`, join(nvm, 'node')])
+})
+
+
+test('automatic discovery and old pnpm selections follow upgrades through the stable package link', { skip: process.platform === 'win32' }, () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-wsl-upgrade-'))
+  try {
+    const root = join(home, '.local/share/dsh-cli/node_modules')
+    const make = (version) => {
+      const dir = join(root, '.pnpm', `@deepseek-ai+dsh@${version}_hash`, 'node_modules/@deepseek-ai/dsh')
+      mkdirSync(join(dir, 'lib'), { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version, bin: 'lib/bin.js' }))
+      writeFileSync(join(dir, 'lib/bin.js'), '// fixture')
+      return dir
+    }
+    const old = make('0.2.2-rc.2'), next = make('0.2.2-rc.3')
+    const stable = join(root, '@deepseek-ai/dsh')
+    mkdirSync(join(root, '@deepseek-ai'), { recursive: true })
+    symlinkSync(old, stable)
+    // Disable login-shell discovery to prove the conventional install is found without PATH.
+    const tools = join(home, 'tools'); mkdirSync(tools)
+    writeFileSync(join(tools, 'bash'), '#!/bin/sh\nexit 0\n'); chmodSync(join(tools, 'bash'), 0o755)
+    const probe = (dshEntry) => parseProbe(execFileSync('sh', ['-c', probeScript({ dshEntry })], { env: { HOME: home, PATH: `${tools}:/usr/bin:/bin` }, encoding: 'utf8' }))
+    assert.equal(probe().own.version, '0.2.2-rc.2')
+    unlinkSync(stable); symlinkSync(next, stable)
+    for (const selection of [stable, old + '/lib/bin.js', '~/' + old.slice(home.length + 1) + '/lib/bin.js']) {
+      const found = probe(selection)
+      assert.equal(found.own.version, '0.2.2-rc.3')
+      assert.ok(!found.configuredEntry.includes('/.pnpm/'))
+      const state = evaluate({ desktopVersion: '0.2.2-rc.3', listing: { distros: [{ name: 'test', version: 2 }] }, chosen: { mode: 'reuse', dshEntry: selection }, probe: { ...found, nodes: [{ path: '/node', version: 'v24.22.2' }] } })
+      assert.equal(state.drift, null)
+      assert.equal(state.dshEntry, next + '/lib/bin.js')
+    }
+    rmSync(old, { recursive: true })
+    assert.equal(probe(old + '/lib/bin.js').own.version, '0.2.2-rc.3')
+    assert.equal(probe().own.version, '0.2.2-rc.3')
+    assert.equal(probe().configuredEntry, null)
+    // Never silently replace a named installation with an unrelated PATH candidate.
+    unlinkSync(stable)
+    assert.equal(probe(old + '/lib/bin.js').entryMissing, old + '/lib/bin.js')
+  } finally { rmSync(home, { recursive: true, force: true }) }
 })

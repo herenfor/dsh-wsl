@@ -266,3 +266,13 @@
 验证：单元测试加了 `wslFilePath`（POSIX、两种 UNC 写法、大小写、其他发行版、其他机器、Windows 路径、相对路径、空值）。测试 Desktop 里：POSIX、`//wsl.localhost/Ubuntu/…`、`\\wsl.localhost\Ubuntu\…` 三种写法都由 WSL 端答 302 → 200 `image/png`，缓存头 `immutable`，HEAD 带长度；不存在的文件 WSL 答 404 后退回本机；`workspaceFiles/stat` 用相对路径、POSIX 和两种 UNC 写法都解析到同一个文件。测试环境两边是同一个 Linux 文件系统，真 Windows 上的效果要在真机上看。
 
 相对路径图片的验证（测试 Desktop，假模型让 WSL 任务回一段带图片的 Markdown）：`/home/…`、相对路径、`//wsl.localhost/Ubuntu/…`、`\\wsl.localhost\Ubuntu\…` 四张图都显示（后两张就是原来会被拒绝的 UNC 路径，走上面的兜底），另一个发行版的显示"图片无法预览"（测试环境的"Windows"是 Linux，读不了 UNC）。点开看图器大图加载；右键菜单是"复制图片 / 下载 / 在文件夹显示"，最后一项先 `workspaceFiles/stat` UNC 路径，再 `session/openWorkspacePath` 带 `/home/…`。测试环境里任务的工作目录本来就是 POSIX，所以相对路径那张走的是原来的解析；真 Windows 上相对路径会变成 UNC，走的是和 `\\wsl.localhost\…` 那张同一条路，仍要在真机上看一眼。
+
+## 复用入口随 pnpm 升级（2026-11-14）
+
+设置窗口曾把运行时解析出的 `.pnpm/<版本_hash>/.../lib/bin.js` 预填为用户入口，保存后钉住旧版本。现在 API 的 `dshEntry` 只表示保存的选择，`own.path` 展示实际解析结果；运行时的 `status.dshEntry` 仍用于启动 daemon。无配置时输入框为空，手动指定折叠到高级选项。
+
+探测在 PATH、版本管理器和全局命令之后，还检查 `~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh` 与 `~/.local/share/dsh/node_modules/@deepseek-ai/dsh`。不会遍历整个磁盘、任意项目或 pnpm store。用户明确指定的入口优先。
+
+若旧配置带 `/node_modules/.pnpm/`，优先验证同一安装根目录的 `node_modules/@deepseek-ai/dsh`。验证确为 DSH 后才使用并保存稳定入口；不依赖旧版本目录存在。稳定入口不可用时保留原选择，原入口也消失则显示 `reuse-missing`，不静默换用另一份安装。每次连接或重新检查时重新解析，运行中的任务不会因后台监视升级而被打断。
+
+回归测试用临时目录模拟升级和删除旧版本目录，覆盖无 PATH 的自动发现、稳定入口、旧版本绝对路径、`~/` 路径及稳定链接失效。

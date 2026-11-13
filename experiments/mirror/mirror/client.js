@@ -126,7 +126,7 @@ window.__ModuleLoader__.load({
         setupReuseMissing: '找不到之前复用的 dsh', reuseMissingBody: '之前选的是复用你装的 dsh，但这次在 WSL 里没找到它。为了不让任务悄悄换到另一份数据里，WSL 端先不启动。',
         reuseMissingWhat: '可以填它现在的位置，或者改用插件专用的一份（任务不和你自己的 dsh 同步）。', usePrivate: '改用插件专用一份', entryNotFound: '填的位置没有找到 DSH：{entry}',
         entryLabel: '要复用的 dsh 没被找到，或者想用另一份？填它的位置：', entryLabelPrivate: 'WSL 里已经装了 dsh，只是没被找到？填它的位置就能复用它，不用再装一份：',
-        entryHint: '可以填命令名（dsh）、DSH 的包文件夹，或包里的 lib/bin.js，例如 ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh。用 WSL 里的路径。', entryUse: '使用这份', entryClear: '清除',
+        entryHint: '可以填命令名（dsh）、DSH 的包文件夹，或包里的 lib/bin.js，例如 ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh。用 WSL 里的路径。', entryUse: '使用这份', entryClear: '恢复自动识别', entryAdvanced: '高级：手动指定 DSH 入口',
         reuseWhere: '位置：{dir}', needsNodeMin: 'WSL 里没有找到 Node.js {min} 或更新的版本（这份 DSH 要求的）。', needsNodeManager: '用 nvm 等工具管理 Node 的话，也可以自己装一个 Node {major}（例如 nvm install {major}），再点「重新检查」，插件会找到它。',
         checkedTitle: '查过的位置', checkedNode: 'Node.js（需要 {min} 或更新）', checkedNone: '（一个也没找到）', seenFound: '找到', seenMissing: '不存在', seenNotDsh: '不是 DSH', nodeUsable: '可用', nodeTooOld: '版本太低',
         bridgeLogAt: '连接日志（含 WSL 端启动时的报错）在 Windows 上的 ', probeLogAt: '完整的检查输出在 Windows 上的 ', reuseLocal: '你的 dsh 不是 npm 全局安装的（在 {dir}），插件不替你更新它，以免装出第二份。请用你自己的方式把它更新到 {version}，再点「重新检查」。',
@@ -190,7 +190,7 @@ window.__ModuleLoader__.load({
         setupReuseMissing: 'the dsh you chose to reuse was not found', reuseMissingBody: "You chose to reuse your own dsh, but it was not found in WSL this time. The WSL side stays off rather than quietly switching to another copy's data.",
         reuseMissingWhat: "Enter where it is now, or switch to the plugin's own copy (its tasks are not shared with your own dsh).", usePrivate: "Use the plugin's own copy", entryNotFound: 'No DSH was found at the location you entered: {entry}',
         entryLabel: 'Your dsh was not found, or you want another one? Enter its location:', entryLabelPrivate: 'Already have dsh in WSL, but it was not found? Enter its location to reuse it instead of installing another copy:',
-        entryHint: 'A command name (dsh), the DSH package folder, or lib/bin.js in it, such as ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh. Use the path as WSL sees it.', entryUse: 'Use this one', entryClear: 'Clear',
+        entryHint: 'A command name (dsh), the DSH package folder, or lib/bin.js in it, such as ~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh. Use the path as WSL sees it.', entryUse: 'Use this one', entryClear: 'Detect automatically', entryAdvanced: 'Advanced: specify a DSH entry',
         reuseWhere: 'Location: {dir}', needsNodeMin: 'No Node.js {min} or newer was found in WSL (this DSH requires it).', needsNodeManager: 'If you manage Node with nvm or a similar tool, you can also install Node {major} yourself (for example nvm install {major}) and click "Check again"; the plugin finds it.',
         checkedTitle: 'Where setup looked', checkedNode: 'Node.js (needs {min} or newer)', checkedNone: '(none found)', seenFound: 'found', seenMissing: 'not there', seenNotDsh: 'not DSH', nodeUsable: 'usable', nodeTooOld: 'too old',
         bridgeLogAt: "The connection log (including the WSL side's start-up errors) is on Windows at ", probeLogAt: 'The full check output is on Windows at ', reuseLocal: 'Your dsh is not an npm global install (it is in {dir}), so the plugin does not update it, which would put a second copy beside it. Update it to {version} your own way, then click "Check again".',
@@ -462,8 +462,8 @@ window.__ModuleLoader__.load({
       const entryForm = (label) => {
         const value = entry ?? s.dshEntry ?? ''
         const use = () => { if (!value.trim() || busy) return; setEntry(null); void load({ dshEntry: value.trim() }) }
-        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-          note(label),
+        return h('details', { open: !!s.dshEntry, style: { fontSize: 12 } },
+          h('summary', { style: { cursor: 'pointer' } }, t('entryAdvanced')), note(label),
           row(h('input', {
             value, spellCheck: false, placeholder: '~/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh', disabled: busy,
             onChange: (e) => setEntry(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') use() },

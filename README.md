@@ -43,6 +43,8 @@ English · [中文](README.zh.md)
 2. Quit Desktop completely (in the system tray too), wait at least 5 seconds, then open it again.
 3. On the new-task page, switch the run location under the input box to WSL and follow the "Set up the WSL environment" window.
 
+Reuse mode detects DSH on PATH and in common standalone install folders, so an entry usually needs no input. Manual entries are under “Advanced”. Saved pnpm version paths are repaired when the corresponding stable package entry is valid; check again after upgrading to pick up the new version.
+
 Needs DSH Desktop 0.2.x on Windows 10 or 11, and WSL 2. Tested with DSH 0.2.2-rc.1 and 0.2.2-rc.2 so far. Feature details, other ways to install, updates, uninstalling, troubleshooting and known limitations are in the [plugin's README](experiments/mirror/mirror/README.md).
 
 ---

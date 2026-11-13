@@ -51,6 +51,8 @@ The install box in step 1 also takes these, but a plugin installed this way cann
 
 ## Features in detail
 
+Reuse mode detects DSH on PATH and in common standalone install folders, so an entry usually needs no input. Manual entries are under “Advanced”. Saved pnpm version paths are repaired when the corresponding stable package entry is valid; check again after upgrading to pick up the new version.
+
 ### Run location and folders
 
 - **Choose where each folder runs**: on the new-task page, pick "Windows" or "WSL (distribution)" under the input box. The choice is kept per folder: new tasks in that folder run there from then on, and existing tasks stay where they are. Folders inside WSL (`\\wsl.localhost\…`) always run in WSL.

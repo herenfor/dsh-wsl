@@ -21,7 +21,7 @@ import { installSessionRouting } from './routing.mjs'
 import { createChoices, intendedSection, overlayView, REFERENCE_NAMESPACES, resolveSection, wslSection } from './refs.mjs'
 import { translateLoose } from './ids.mjs'
 import { builtinRoot, isBuiltin } from './agent/index.mjs'
-import { check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
+import { stableDshEntry, check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
 import { noteLanguage, language, pick } from './language.mjs'
 
 export const name = 'wsl-mirror'
@@ -103,12 +103,23 @@ export async function apply(ctx, config = {}) {
   async function resolveBridge() {
     if (bridgeConfig.command) { setup = { state: 'ready', dev: true }; return { command: bridgeConfig.command, args: bridgeConfig.args ?? [] } }
     if (job?.running) return null
+    const chosen = readJson(CONFIG_FILE)
     checking ??= checkWsl({
       wsl: process.env.DSH_WSL_COMMAND ?? 'wsl.exe',
       desktopVersion: ctx.clientModules.composed?.release?.version,
-      chosen: readJson(CONFIG_FILE),
+      chosen,
       pluginDir: PLUGIN_DIR,
     }).then((status) => {
+      // Migrate only when the WSL probe validated the stable replacement, and the
+      // saved selection has not changed while this asynchronous check was running.
+      const saved = readJson(CONFIG_FILE)
+      if (saved.distro === chosen.distro && saved.dshEntry === chosen.dshEntry && saved.dshEntry && status.configuredEntry && status.configuredEntry !== saved.dshEntry &&
+          status.configuredEntry === stableDshEntry(saved.dshEntry)) {
+        try {
+          writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...saved, dshEntry: status.configuredEntry }, null, 2)}\n`)
+          ctx.logger.info('wsl-mirror: dsh entry migrated %s -> %s', saved.dshEntry, status.configuredEntry)
+        } catch (error) { ctx.logger.warn('wsl-mirror: could not save stable DSH entry: %s', error.message) }
+      }
       if (status.probeOutput) { try { mkdirSync(dirname(PROBE_LOG), { recursive: true }); writeFileSync(PROBE_LOG, `${status.probeOutput}\n`) } catch {} }
       delete status.probeOutput
       setup = status; return status
@@ -494,7 +505,7 @@ export async function apply(ctx, config = {}) {
       state, distro: s.distro ?? remoteGraph?.distro ?? null, distros: (s.distros ?? []).map((d) => d.name), dev: !!s.dev,
       mode: s.mode ?? null, own: s.own ? { version: s.own.version, path: s.own.entry, dir: s.own.pkgDir, kind: s.own.kind ?? null, configured: !!s.own.configured } : null,
       // Where setup looked for DSH and Node, and the DSH location the person named (config dshEntry).
-      checked: s.checked ?? null, dshEntry: s.dshEntry ?? null, entryMissing: s.entryMissing ?? null, chosenMode: s.chosenMode ?? null,
+      checked: s.checked ?? null, dshEntry: s.configuredEntry ?? null, entryMissing: s.entryMissing ?? null, chosenMode: s.chosenMode ?? null,
       probeLog: s.checked ? PROBE_LOG : null,
       // Once connected, the versions that matter are the running ones.
       drift: state === 'connected' ? ((o) => (o === 0 ? null : o < 0 ? 'wsl-older' : 'wsl-newer'))(compareVersions(wslVersion, desktopVersion)) : s.drift ?? null,

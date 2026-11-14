@@ -13,10 +13,21 @@ target="$FAKE_HOME"; [ "${1:-}" = --real ] && target="$REAL_HOME"
 
 "$DEV_DIR/stop-test-desktop.sh"
 mkdir -p "$DESK_HOME" "$FAKE_HOME"
-if [ ! -f "$DESK_HOME/.dsh/profiles/web/package.json" ]; then
-  echo "first run: creating the test Desktop's profile in $DESK_HOME" >&2
-  HOME="$DESK_HOME" DSH_HOME="$DESK_HOME/.dsh" "$DSH_BIN" plugin --profile web add "link:$REPO_DIR/experiments/mirror/mirror" >&2
-fi
+# Production admits Windows only. A copy confined to the fake Desktop HOME admits
+# Linux for this simulator; never relax the published bundle's platform declaration.
+"$REPO_DIR/scripts/assemble.sh" >&2
+node --input-type=module - "$REPO_DIR" "$DESK_HOME" <<'JS'
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+const [repo, home] = process.argv.slice(2)
+const fixture = join(home, 'wsl-bridge-fixture')
+mkdirSync(fixture, { recursive: true })
+cpSync(join(repo, 'experiments/mirror/mirror'), fixture, { recursive: true })
+const file = join(fixture, 'package.json'), pkg = JSON.parse(readFileSync(file, 'utf8'))
+pkg.private = true; pkg.dsh.bundle.platforms = ['linux']
+writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n')
+JS
+HOME="$DESK_HOME" DSH_HOME="$DESK_HOME/.dsh" "$DSH_BIN" plugin --profile web add "link:$DESK_HOME/wsl-bridge-fixture" >&2
 rm -f "$ROUTING_LOG"
 HOME="$DESK_HOME" DSH_HOME="$DESK_HOME/.dsh" REAL_HOME="$REAL_HOME" FAKE_HOME="$target" \
   DSH_WSL_COMMAND="$DEV_DIR/fakewsl/wsl" DSH_WSL_NO_BROKER=1 DSH_WSL_DEBUG="$ROUTING_LOG" \

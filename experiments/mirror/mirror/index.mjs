@@ -23,6 +23,7 @@ import { translateLoose } from './ids.mjs'
 import { builtinRoot, isBuiltin } from './agent/index.mjs'
 import { stableDshEntry, check as checkWsl, compareVersions, commandsFor, promptFor } from './setup.mjs'
 import { noteLanguage, language, pick } from './language.mjs'
+import { admitsHost, wrongHostMessage, wslRequestProblem } from './admission.mjs'
 
 export const name = 'wsl-mirror'
 export const inject = ['clientModules', 'webServer', 'connection', 'settings', 'typertGateway']
@@ -66,7 +67,8 @@ const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8'))
 // (an update from the Plugins page) asks for a restart too; a plugin that came up with the Desktop and is loaded again
 // at the same version (a service it uses restarted) works as before.
 const HOT_LOAD_SECONDS = Number(process.env.DSH_WSL_HOT_LOAD_SECONDS ?? 60)
-const OWN_VERSION = readJson(join(PLUGIN_DIR, 'package.json')).version
+const OWN_PACKAGE = readJson(join(PLUGIN_DIR, 'package.json'))
+const OWN_VERSION = OWN_PACKAGE.version
 export function loadKind(seen, version, uptime, hotSeconds = HOT_LOAD_SECONDS) {
   if (seen === undefined) return { mode: uptime > hotSeconds ? 'restart-required' : 'boot', version }
   if (seen.mode === 'restart-required' || seen.version !== version) return { mode: 'restart-required', version: seen.version }
@@ -94,8 +96,9 @@ function applyRestartRequired(ctx) {
 }
 
 export async function apply(ctx, config = {}) {
-  if (loadedWhileRunning()) return applyRestartRequired(ctx)
+  if (!admitsHost(process.platform, OWN_PACKAGE, process.env.DSH_WSL_COMMAND)) throw new Error(wrongHostMessage(true) + '\n' + wrongHostMessage())
   const bridgeConfig = readBridgeConfig(config ?? {})
+  if (loadedWhileRunning()) return applyRestartRequired(ctx)
   // First-run setup (setup.mjs): the state of the WSL side, asked again before every connect and on "re-check".
   let setup = { state: 'checking' }
   let checking
@@ -411,6 +414,9 @@ export async function apply(ctx, config = {}) {
       try {
         if (req.method === 'POST') {
           const body = JSON.parse((await readBody(req)).toString('utf8'))
+          const problem = wslRequestProblem(body)
+          if (problem === 'wrong-host') return reply({ connected: true, distro, error: pick({ zh: wrongHostMessage(true), en: wrongHostMessage() }) })
+          if (problem === 'version-only') return reply({ connected: true, distro, error: pick({ zh: '这里只填写了版本号。请填写完整的包名和版本，例如 @herenfor/dsh-tune@0.2.17。', en: 'Enter a package name and version, for example @herenfor/dsh-tune@0.2.17, rather than a version alone.' }) })
           const call = {
             enable: () => callWsl('setBundleEnabled', { name: body.name, enabled: true }),
             disable: () => callWsl('setBundleEnabled', { name: body.name, enabled: false }),
@@ -422,6 +428,8 @@ export async function apply(ctx, config = {}) {
           }[body.action]
           if (call === undefined) return reply({ connected: true, distro, error: `unknown action ${body.action}` })
           const result = await call()
+          // Paths, tarballs and npm aliases reveal their package identity only after inspection.
+          if (body.action === 'inspect' && wslRequestProblem({ action: 'inspect', name: result?.name }) === 'wrong-host') return reply({ connected: true, distro, error: pick({ zh: wrongHostMessage(true), en: wrongHostMessage() }) })
           // Followed: the person's own profile gets the same change (after this one worked here).
           let follow
           if (['install', 'remove', 'enable', 'disable'].includes(body.action) && typeof body.name === 'string' && !result?.error && result?.application !== 'failed') {

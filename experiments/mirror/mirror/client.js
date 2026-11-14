@@ -776,6 +776,7 @@ window.__ModuleLoader__.load({
         try {
           const r = await api('wsl-bridge/plugins', body)
           if (r.error) setNote({ text: t('actionFailed', { what, error: r.error }), error: true })
+          else if (r.follow?.error) setNote({ text: t('followFailed', { from: r.follow.from ?? '', error: r.follow.error }), error: true })
           else { setNote(outcomeText(what, r.result)); if (!r.result?.error) after?.(r.result) }
         } catch (e) { setNote({ text: String(e), error: true }) } finally { setBusy(null); void load() }
       }

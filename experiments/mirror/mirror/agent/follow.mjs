@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 export const AGENT = 'dsh-wsl-agent'
+export const WINDOWS_BUNDLE = '@herenfor/dsh-wsl'
 // The bundles every web-template profile starts with; never followed, never removed.
 export const BASE = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
 export const STATE_DIR = join(homedir(), '.dsh-wsl', 'follow')
@@ -33,8 +34,8 @@ export const packageOf = (name) => (typeof name !== 'string' ? undefined : name.
  * @returns { add: [[name, spec]], remove: [name], bundles: [...], state }
  */
 export function planManifest(source, target, state = {}) {
-  const sourceDeps = Object.fromEntries(Object.entries(source.dependencies ?? {}).filter(([name]) => name !== AGENT))
-  const sourceBundles = bundlesOf(source).filter((n) => n !== AGENT && !BASE.has(n))
+  const sourceDeps = Object.fromEntries(Object.entries(source.dependencies ?? {}).filter(([name]) => name !== AGENT && name !== WINDOWS_BUNDLE))
+  const sourceBundles = bundlesOf(source).filter((n) => n !== AGENT && n !== WINDOWS_BUNDLE && !BASE.has(n))
   const targetDeps = target.dependencies ?? {}
   const add = Object.entries(sourceDeps).filter(([name, spec]) => targetDeps[name] !== spec)
   const remove = (state.deps ?? []).filter((name) => !(name in sourceDeps) && name in targetDeps && name !== AGENT)
@@ -169,7 +170,13 @@ export function syncFollow({ home, from, to, dshEntry, run, log, stateDir = STAT
 
 /** The `pnpm add` argument for a dependency as a manifest records it. */
 export const installArg = (name, spec) => (typeof spec !== 'string' || spec === '' ? name
-  : /^(link:|file:|git[+:]|github:|https?:|\/|\.)/.test(spec) ? spec : `${name}@${spec}`)
+  : /^(link:|file:|git[+:@]|ssh:|github:|gitlab:|bitbucket:|gist:|https?:|\/|\.)/.test(spec) || /^[\w.-]+\/[\w.-]+(?:#.*)?$/.test(spec) ? spec : `${name}@${spec}`)
+
+/** A manifest dependency is a version/range, whereas an incoming request already has a complete install spec. */
+export const sourceInstallSpec = (manifest, name, fallback) => Object.hasOwn(manifest?.dependencies ?? {}, name)
+  ? installArg(name, manifest.dependencies[name]) : fallback
+
+const runError = (result) => [result.stdout, result.stderr].filter(Boolean).join('\n').trim().slice(-2000) || `exit ${result.status}`
 
 /** What the source profile follows today (for the WSL tab): its plugin names, or undefined without a sync yet. */
 export function followState(to, stateDir = STATE_DIR) {
@@ -182,6 +189,7 @@ export function followState(to, stateDir = STATE_DIR) {
  * install (spec, name), remove (name), enable / disable (name). The person's own DSH sees it when it next starts.
  */
 export function changeSource({ home, from, action, name, spec, run }) {
+  if (name === WINDOWS_BUNDLE && (action === 'install' || action === 'enable')) return { error: `${WINDOWS_BUNDLE} belongs in Windows Desktop, not a WSL profile` }
   const dir = join(home, 'profiles', from)
   const file = join(dir, 'package.json')
   const pkg = readJson(file)
@@ -190,11 +198,11 @@ export function changeSource({ home, from, action, name, spec, run }) {
   const has = typeof name === 'string' && (official || name in (pkg.dependencies ?? {}))
   if (action === 'install') {
     const r = run(['plugin', '--profile', from, 'add', spec])
-    if (r.status !== 0) return { error: r.stderr.trim().slice(-300) || `exit ${r.status}` }
+    if (r.status !== 0) return { error: runError(r) }
   } else if (action === 'remove') {
     if (!(name in (pkg.dependencies ?? {}))) return { skipped: 'not in the source' }
     const r = run(['plugin', '--profile', from, 'remove', name])
-    if (r.status !== 0) return { error: r.stderr.trim().slice(-300) || `exit ${r.status}` }
+    if (r.status !== 0) return { error: runError(r) }
   } else if (action !== 'enable' && action !== 'disable') return { error: `unknown action ${action}` }
   else if (!has) return { skipped: 'not in the source' }
   // The bundle list: on after install / enable, off after remove / disable.
@@ -212,7 +220,7 @@ export function changeSource({ home, from, action, name, spec, run }) {
 export function runDsh(dshEntry, env) {
   return (argv) => {
     const r = spawnSync(process.execPath, [dshEntry, ...argv], { env, encoding: 'utf8', timeout: 300_000 })
-    return { status: r.status, stderr: `${r.stderr ?? ''}${r.error ? r.error.message : ''}` }
+    return { status: r.status, stdout: r.stdout ?? '', stderr: `${r.stderr ?? ''}${r.error ? r.error.message : ''}` }
   }
 }
 

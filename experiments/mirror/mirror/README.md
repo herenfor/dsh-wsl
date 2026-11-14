@@ -20,6 +20,8 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task that runs 
 
 **rc.3 live verification (2026-11-14):** Windows Desktop and WSL both ran DSH `0.2.2-rc.3`. The `0.1.12-dev.1` candidate verified automatic discovery, persistent migration of old pnpm entries, rc.3 Host / daemon startup, and connection and task mirroring after the first restart. UI behavior was checked through code and state; migration logs were not observed directly. This acceptance did not cover every plugin combination or a second restart.
 
+**0.1.13 local checks (2026-11-14):** the real DSH `0.2.2-rc.3` manager and two isolated Hosts cover wrong-location rejection, removal recovery, retained sessions and reconnection after reinstall; the Chinese notice was checked in a browser screenshot. Desktop is simulated with a private Linux copy, not a native Electron window. The latest use-side record is plugin `0.1.12`, with Desktop / WSL on rc.3: bridge and tuning loaded after restart; `web` was stopped, so creating a session there was not checked online.
+
 ## Requirements
 
 - DSH Desktop 0.2.x on Windows 10 or 11.
@@ -27,6 +29,8 @@ Lets DeepSeek Harness Desktop on Windows run tasks in WSL. For a task that runs 
 - A DSH in WSL whose version matches Desktop in its first two parts (for example both 0.2.x). Without one, the plugin lists the install commands; it can run them for you or hand them to the Windows DSH (step 3 below).
 
 ## Install
+
+**Install this package in Windows Desktop only. It deploys `dsh-wsl-agent` inside WSL automatically. If you installed the bridge inside WSL by mistake, remove it there; removing this package does not delete sessions or user files.**
 
 1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
 2. Quit Desktop completely (if it keeps running in the system tray, quit it there too), wait at least 5 seconds, then open it again. Until then the plugin does not start working, and the bottom of the sidebar says to restart Desktop.

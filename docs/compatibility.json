@@ -1,6 +1,28 @@
 {
-  "testedDshVersions": ["0.2.2-rc.1", "0.2.2-rc.2", "0.2.2-rc.3"],
+  "testedDshVersions": [
+    "0.2.2-rc.1",
+    "0.2.2-rc.2",
+    "0.2.2-rc.3"
+  ],
   "latestAcceptance": {
+    "date": "2026-11-14",
+    "pluginVersion": "0.1.12",
+    "desktopDshVersion": "0.2.2-rc.3",
+    "wslDshVersion": "0.2.2-rc.3",
+    "scope": "使用端修复配置后重启：桥接连接、两端 rc.3、优化插件加载、旧包路径及重复补丁清理",
+    "limits": "使用端 web 未启动，未在线新建会话；这是已发布 0.1.12 的恢复记录，不是 0.1.13 新代码的原生 Desktop 验收"
+  },
+  "localInstallationVerification": {
+    "date": "2026-11-14",
+    "pluginBaseVersion": "0.1.12",
+    "status": "release-candidate-tested-locally",
+    "dshVersion": "0.2.2-rc.3",
+    "unitTestsPassed": 64,
+    "scope": "本机真实 DSH 管理器、两个隔离 Host：误装拒绝、卸载恢复、新建及原有会话、重装连接；浏览器中文提示经截图检查",
+    "limits": "Windows Desktop 由 Linux 私有副本模拟；没有改动生产 profile 或远端机器；不等于原生 Electron 窗口验收",
+    "pluginVersion": "0.1.13"
+  },
+  "entryMigrationAcceptance": {
     "date": "2026-11-14",
     "pluginVersion": "0.1.12-dev.1",
     "desktopDshVersion": "0.2.2-rc.3",

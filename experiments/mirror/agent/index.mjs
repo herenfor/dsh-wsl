@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 import { BrokerClient, brokerCredentials } from './broker.mjs'
-import { changeSource, followState, noteFollowed, runDsh } from './follow.mjs'
+import { changeSource, followState, noteFollowed, runDsh, sourceInstallSpec } from './follow.mjs'
 
 export const name = 'wsl-agent'
 export const inject = ['clientModules', 'webServer']
@@ -162,7 +162,7 @@ export function apply(ctx) {
       const home = process.env.DSH_HOME || join(homedir(), '.dsh')
       // Install the same thing this Host's profile just installed (the WSL tab installs here first): its manifest's spec.
       let spec = body.spec
-      if (body.action === 'install') { try { spec = JSON.parse(readFileSync(join(home, 'profiles', to, 'package.json'), 'utf8')).dependencies?.[body.name] ?? spec } catch {} }
+      if (body.action === 'install') { try { spec = sourceInstallSpec(JSON.parse(readFileSync(join(home, 'profiles', to, 'package.json'), 'utf8')), body.name, spec) } catch {} }
       const result = changeSource({ home, from, action: body.action, name: body.name, spec, run: runDsh(process.argv[1], process.env) })
       if (result.ok) { try { noteFollowed(to, body) } catch {} }
       reply({ from, ...result })

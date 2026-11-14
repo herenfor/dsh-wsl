@@ -1,6 +1,6 @@
 # 开发用测试环境
 
-没有 Windows 也能端到端测试：用 Linux 上的一个 `dsh web` 冒充 Windows 版 Desktop，用一个假的 `wsl.exe`（`fakewsl/wsl`）把"WSL"指到本机的另一个家目录。Desktop 端插件以 `link:` 方式装在这个仓库上，改了代码重启测试 Desktop 就生效。
+没有 Windows 也能端到端测试：用 Linux 上的一个 `dsh web` 冒充 Windows 版 Desktop，用一个假的 `wsl.exe`（`fakewsl/wsl`）把"WSL"指到本机的另一个家目录。Desktop 端插件从本仓库复制到测试 HOME 中的 `wsl-bridge-fixture`，仅这个私有副本允许 Linux 平台模拟；发布包始终只允许 Windows。改了代码重新运行启动脚本即可更新副本。
 
 所有测试都在这里做，**不要碰真实的 Desktop 和真实的 WSL 端**（真实的 `~/.dsh`、`~/.dsh-wsl`、正在运行的真实 daemon）。
 
@@ -8,7 +8,7 @@
 
 | 目录（默认） | 环境变量 | 是什么 |
 |---|---|---|
-| `~/dshwsl-desk` | `DSH_WSL_DEV_DESK_HOME` | 测试 Desktop 的 HOME。`.dsh/` 是它的 DSH_HOME（profile `web` 里 link 了本仓库的插件）；`.dsh-wsl/` 是插件眼里的"Windows 端"目录（`config.json`、`setup-probe.log`、`bridge.log`）；`desktop.log`、`routing-debug.log` 是日志；`projects/website` 是 Windows 端的演示文件夹 |
+| `~/dshwsl-desk` | `DSH_WSL_DEV_DESK_HOME` | 测试 Desktop 的 HOME。`.dsh/` 是它的 DSH_HOME（profile `web` 里 link 了私有测试副本）；`.dsh-wsl/` 是插件眼里的"Windows 端"目录（`config.json`、`setup-probe.log`、`bridge.log`）；`desktop.log`、`routing-debug.log` 是日志；`projects/website` 是 Windows 端的演示文件夹 |
 | `~/dshwsl-fh` | `DSH_WSL_DEV_FAKE_HOME` | 假 WSL 发行版的家目录。WSL 端的 daemon、`~/.dsh`（profile `web` 和 `desktop-wsl`）、`~/.dsh-wsl/bridge` 都在这里 |
 
 其他设置见 `env.sh`（端口默认 47102，`DSH_WSL_DEV_PORT`）。
@@ -49,7 +49,7 @@ DEEPSEEK_API_KEY=sk-demo-not-a-real-key dev/start-test-desktop.sh   # 不弹登�
 ## 从零搭起来
 
 1. 装好全局 `dsh`（0.2.x，Node ≥ 24.9）。截图还要 Playwright 的 chromium headless shell（`npx playwright install chromium-headless-shell`）。
-2. `echo '{"mode":"reuse"}' > ~/dshwsl-desk/.dsh-wsl/config.json`（目录不存在先建），再 `dev/start-test-desktop.sh`。第一次会在 `~/dshwsl-desk/.dsh` 建 profile 并 link 本仓库的插件；打开页面后 WSL 端会在 `~/dshwsl-fh` 里建 `desktop-wsl` 并拷 bridge 文件。
+2. `echo '{"mode":"reuse"}' > ~/dshwsl-desk/.dsh-wsl/config.json`（目录不存在先建），再 `dev/start-test-desktop.sh`。第一次会在 `~/dshwsl-desk/.dsh` 建 profile 并 link 私有测试副本；打开页面后 WSL 端会在 `~/dshwsl-fh` 里建 `desktop-wsl` 并拷 bridge 文件。
 3. 给假 WSL 的 `web` 装插件：`HOME=~/dshwsl-fh dsh plugin --profile web add dsh-pet`，然后写上面那份 dsh-pet 配置（`{"trayEnabled": false, "pets": [{… "display": "web" …}]}`，字段见 dsh-pet 包里的 `assets/config.jsonc`）。
 4. Windows 端演示数据：`node dev/demo-data.mjs <token>`。
 5. WSL 端演示数据：
@@ -70,7 +70,7 @@ DEEPSEEK_API_KEY=sk-demo-not-a-real-key dev/start-test-desktop.sh   # 不弹登�
 ## 容易踩的坑
 
 - 测试 Desktop 启动 60 秒之后才加载到的插件版本，会进入"需要重启"模式（`DSH_WSL_HOT_LOAD_SECONDS`）。改了插件代码就重启测试 Desktop，不要指望热加载。
-- 测试 Desktop 用的是 `link:` 安装，路径里没有 `node_modules`。和安装路径有关的问题（比如 0.1.4 的 bridge 文件没拷），要把 npm 包解到一个 `node_modules` 里再测。
+- 测试 Desktop 用的是测试 HOME 中私有副本的 `link:` 安装，路径里没有 `node_modules`。和安装路径有关的问题（比如 0.1.4 的 bridge 文件没拷），要把 npm 包解到一个 `node_modules` 里再测。
 - 没有 `DEEPSEEK_API_KEY` 时页面会弹「开始使用」登录框，它的透明遮罩会挡住侧栏点击。
 - ds-bot 会记住窗口显示它自己的界面还是 DSH 的界面（localStorage `ds-bot:surface` = `bot` / `agent`），新的浏览器配置默认进 DS Bot。
 - `pkill -f <模式>` 会匹配到执行它的那条 shell 命令本身，把自己杀掉；用 `ps … | awk` 精确匹配，或像 `env.sh` 里的 `desk_pids` 那样写。

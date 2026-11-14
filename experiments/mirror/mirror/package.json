@@ -1,6 +1,6 @@
 {
   "name": "@herenfor/dsh-wsl",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "WSL run mode for DeepSeek Harness Desktop on Windows: run chosen tasks, and the plugins they use, in WSL from the Desktop window",
   "license": "MIT",
   "icon": "./icon.svg",
@@ -35,7 +35,10 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./cordis.patch.yml",
+      "platforms": [
+        "win32"
+      ]
     },
     "client": {
       "platform": "web",

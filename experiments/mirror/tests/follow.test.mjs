@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { changeSource, followState, insertedIds, mergePatches, noteFollowed, packageOf, planManifest, syncFollow } from '../agent/follow.mjs'
+import { changeSource, followState, insertedIds, installArg, mergePatches, noteFollowed, packageOf, planManifest, runDsh, sourceInstallSpec, syncFollow } from '../agent/follow.mjs'
 
 const manifest = (deps, bundles) => ({ name: 'p', dependencies: deps, dsh: { profile: { bundles } } })
 const BASE = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
@@ -107,17 +107,49 @@ test('the WSL tab\'s changes reach the source profile', () => {
     return { status: 0, stderr: '' }
   }
   const bundles = () => JSON.parse(readFileSync(file, 'utf8')).dsh.profile.bundles
-  assert.deepEqual(changeSource({ home, from: 'web', action: 'install', name: 'ds-bot', spec: '0.3.5', run }), { ok: true })
+  assert.deepEqual(changeSource({ home, from: 'web', action: 'install', name: 'ds-bot', spec: sourceInstallSpec({ dependencies: { 'ds-bot': '0.3.5' } }, 'ds-bot', 'ds-bot'), run }), { ok: true })
   assert.deepEqual(bundles(), [...BASE, 'tuning', 'ds-bot'])
   assert.deepEqual(changeSource({ home, from: 'web', action: 'disable', name: 'tuning', run }), { ok: true })
   assert.deepEqual(bundles(), [...BASE, 'ds-bot'])
   assert.deepEqual(changeSource({ home, from: 'web', action: 'enable', name: 'other', run }), { skipped: 'not in the source' })
   assert.deepEqual(changeSource({ home, from: 'web', action: 'remove', name: 'ds-bot', run }), { ok: true })
   assert.deepEqual(bundles(), [...BASE])
-  assert.deepEqual(calls, ['plugin --profile web add 0.3.5', 'plugin --profile web remove ds-bot'])
+  assert.deepEqual(calls, ['plugin --profile web add ds-bot@0.3.5', 'plugin --profile web remove ds-bot'])
   const stateDir = join(home, 'state'); mkdirSync(stateDir)
   writeFileSync(join(stateDir, 'desktop-wsl.json'), JSON.stringify({ from: 'web', deps: ['tuning'], bundles: ['tuning'] }))
   noteFollowed('desktop-wsl', { action: 'install', name: 'ds-bot' }, stateDir)
   assert.deepEqual(followState('desktop-wsl', stateDir).names, ['tuning', 'ds-bot'])
   assert.ok(existsSync(join(stateDir, 'desktop-wsl.json')))
+})
+
+test('follow installs the manifest package identity, including ranges and local/git sources', () => {
+  for (const [spec, expected] of [
+    ['0.2.17', '@herenfor/dsh-tune@0.2.17'], ['^0.2.17', '@herenfor/dsh-tune@^0.2.17'],
+    ['link:/tmp/tune', 'link:/tmp/tune'], ['file:/tmp/tune.tgz', 'file:/tmp/tune.tgz'],
+    ['github:owner/repo#commit', 'github:owner/repo#commit'], ['gitlab:owner/repo', 'gitlab:owner/repo'],
+    ['git@github.com:owner/repo.git', 'git@github.com:owner/repo.git'], ['ssh://git@host/repo', 'ssh://git@host/repo'], ['owner/repo#commit', 'owner/repo#commit'],
+    ['npm:another-package@1.0.0', '@herenfor/dsh-tune@npm:another-package@1.0.0'],
+  ]) assert.equal(sourceInstallSpec({ dependencies: { '@herenfor/dsh-tune': spec } }, '@herenfor/dsh-tune', 'unused'), expected)
+  assert.equal(sourceInstallSpec({}, '@herenfor/dsh-tune', '@herenfor/dsh-tune@latest'), '@herenfor/dsh-tune@latest')
+  assert.equal(installArg('@herenfor/dsh-tune', ''), '@herenfor/dsh-tune')
+})
+
+test('a Windows bridge is never followed into WSL and cannot be enabled through follow', () => {
+  const name = '@herenfor/dsh-wsl'
+  const plan = planManifest(manifest({ [name]: '0.1.12', tuning: '0.2.17' }, [...BASE, name, 'tuning']), manifest({}, BASE))
+  assert.deepEqual(plan.add, [['tuning', '0.2.17']]); assert.ok(!plan.bundles.includes(name))
+  for (const action of ['install', 'enable']) assert.match(changeSource({ name, action }).error, /Windows Desktop/)
+})
+
+test('follow failures keep stdout diagnostics as well as stderr and do not mark the bundle enabled', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-follow-error-'))
+  try {
+    const file = join(home, 'profiles/web/package.json'); mkdirSync(join(file, '..'), { recursive: true })
+    const original = JSON.stringify(manifest({}, BASE)); writeFileSync(file, original)
+    const result = changeSource({ home, from: 'web', action: 'install', name: 'tuning', spec: 'tuning@1', run: () => ({ status: 1, stdout: 'ERR_PNPM_FETCH_404', stderr: 'request failed' }) })
+    assert.match(result.error, /ERR_PNPM_FETCH_404/); assert.match(result.error, /request failed/)
+    assert.equal(readFileSync(file, 'utf8'), original)
+    const fake = join(home, 'fake-dsh.mjs'); writeFileSync(fake, 'console.log("diagnostic on stdout"); console.error("diagnostic on stderr"); process.exitCode = 1')
+    const run = runDsh(fake, process.env)([]); assert.equal(run.status, 1); assert.match(run.stdout, /on stdout/); assert.match(run.stderr, /on stderr/)
+  } finally { rmSync(home, { recursive: true, force: true }) }
 })

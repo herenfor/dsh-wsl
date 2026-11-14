@@ -39,6 +39,8 @@ English · [中文](README.zh.md)
 
 ## Quick start
 
+**Install `@herenfor/dsh-wsl` in Windows Desktop only. It deploys the WSL companion, `dsh-wsl-agent`, automatically; do not install a second bridge inside WSL.**
+
 1. Desktop → Plugins → Add plugin → Install a third-party plugin, enter `@herenfor/dsh-wsl` and install.
 2. Quit Desktop completely (in the system tray too), wait at least 5 seconds, then open it again.
 3. On the new-task page, switch the run location under the input box to WSL and follow the "Set up the WSL environment" window.
@@ -46,6 +48,8 @@ English · [中文](README.zh.md)
 Reuse mode detects DSH on PATH and in common standalone install folders, so an entry usually needs no input. Manual entries are under “Advanced”. Saved pnpm version paths are repaired when the corresponding stable package entry is valid; check again after upgrading to pick up the new version.
 
 **rc.3 live verification (2026-11-14):** Windows Desktop and WSL both ran DSH `0.2.2-rc.3`. The `0.1.12-dev.1` candidate verified automatic discovery, persistent migration of old pnpm entries, rc.3 Host / daemon startup, and connection and task mirroring after the first restart. UI behavior was checked through code and state; migration logs were not observed directly. This acceptance did not cover every plugin combination or a second restart.
+
+**0.1.13 local checks (2026-11-14):** the real DSH `0.2.2-rc.3` manager and two isolated Hosts cover wrong-location rejection, removal recovery, retained sessions and reconnection after reinstall; the Chinese notice was checked in a browser screenshot. Desktop is simulated with a private Linux copy, not a native Electron window. The latest use-side record is plugin `0.1.12`, with Desktop / WSL on rc.3: bridge and tuning loaded after restart; `web` was stopped, so creating a session there was not checked online.
 
 Needs DSH Desktop 0.2.x on Windows 10 or 11, and WSL 2. Tested with DSH 0.2.2-rc.1, 0.2.2-rc.2 and 0.2.2-rc.3 so far. Feature details, other ways to install, updates, uninstalling, troubleshooting and known limitations are in the [plugin's README](experiments/mirror/mirror/README.md).
 
